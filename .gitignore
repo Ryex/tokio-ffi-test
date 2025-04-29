@@ -1,0 +1,3 @@
+crates/.cache/clangd/index
+crates/target
+crates/compile_commands.json
