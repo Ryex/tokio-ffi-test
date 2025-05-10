@@ -32,25 +32,6 @@ type Box<
 
 type Box<
     dyn Fn(
-        ::std::sync::Arc<crate::tasks::TaskContext>
-    ) -> ::std::result::Result<(), crate::tasks::TaskError> + Send
-> {
-    #layout(size = 16, align = 8);
-}
-
-type Box<
-    dyn Fn(
-        ::std::sync::Arc<crate::tasks::TaskContext>
-    ) -> ::std::result::Result<
-        crate::ffi::CxxAny,
-        crate::tasks::TaskError
-    > + Send
-> {
-    #layout(size = 16, align = 8);
-}
-
-type Box<
-    dyn Fn(
         ::std::result::Result<(), crate::tasks::TaskError>
     ) -> ::std::result::Result<(), crate::tasks::TaskError> + Send
 > {
@@ -189,12 +170,12 @@ mod crate::tasks {
         fn new_blocking_with_ctx<
             (),
             Box<dyn Fn(
-                ::std::sync::Arc<crate::tasks::TaskContext>
+                &crate::tasks::TaskContext
             ) -> ::std::result::Result<(), crate::tasks::TaskError> + Send>
         >(
             &self,
             Box<dyn Fn(
-                ::std::sync::Arc<crate::tasks::TaskContext>
+                &crate::tasks::TaskContext
             ) -> ::std::result::Result<(), crate::tasks::TaskError> + Send>,
             ::std::option::Option<TaskOptions>,
         ) -> Box<Task<()>>;
@@ -218,7 +199,7 @@ mod crate::tasks {
         fn new_blocking_with_ctx<
             crate::ffi::CxxAny,
             Box<dyn Fn(
-                ::std::sync::Arc<crate::tasks::TaskContext>
+                &crate::tasks::TaskContext
             ) -> ::std::result::Result<
                 crate::ffi::CxxAny,
                 crate::tasks::TaskError
@@ -226,7 +207,7 @@ mod crate::tasks {
         >(
             &self,
             Box<dyn Fn(
-                ::std::sync::Arc<crate::tasks::TaskContext>
+                &crate::tasks::TaskContext
             ) -> ::std::result::Result<
                 crate::ffi::CxxAny,
                 crate::tasks::TaskError
@@ -437,10 +418,16 @@ mod ::std {
     mod result {
         type Result<Box<crate::tasks::Task<()>>, crate::tasks::TaskSpawnError> {
             #layout(size = 24, align = 8);
+
+            constructor Ok(Box<crate::tasks::Task<()>>);
+            constructor Err(crate::tasks::TaskSpawnError);
         }
 
         type Result<(), crate::tasks::TaskError> {
             #layout(size = 32, align = 8);
+
+            constructor Ok(());
+            constructor Err(crate::tasks::TaskError);
         }
 
         type Result<
@@ -448,10 +435,16 @@ mod ::std {
             crate::tasks::TaskSpawnError
         > {
             #layout(size = 24, align = 8);
+
+            constructor Ok(Box<crate::tasks::Task<crate::ffi::CxxAny>>);
+            constructor Err(crate::tasks::TaskSpawnError);
         }
 
         type Result<crate::ffi::CxxAny, crate::tasks::TaskError> {
             #layout(size = 32, align = 8);
+
+            constructor Ok(crate::ffi::CxxAny);
+            constructor Err(crate::tasks::TaskError);
         }
     }
 }
@@ -464,6 +457,3 @@ type Box<crate::tasks::Task<crate::ffi::CxxAny>> {
     #layout(size = 8, align = 8);
 }
 
-type ::std::sync::Arc<crate::tasks::TaskContext> {
-    #layout(size = 8, align = 8);
-}

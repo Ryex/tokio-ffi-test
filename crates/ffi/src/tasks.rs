@@ -365,16 +365,16 @@ impl TaskManager {
     pub fn new_task_with_ctx<T, F, R>(&self, f: F, options: Option<TaskOptions>) -> Box<Task<T>>
     where
         T: Send + 'static,
-        F: FnOnce(Arc<TaskContext>) -> R,
+        F: FnOnce(&TaskContext) -> R,
         R: Future<Output = Result<T, TaskError>> + Send + 'static,
     {
-        Task::with_progress(self, f, options)
+        Task::with_ctx(self, f, options)
     }
 
     pub fn new_blocking_with_ctx<T, F>(&self, f: F, options: Option<TaskOptions>) -> Box<Task<T>>
     where
         T: Send + 'static,
-        F: FnOnce(Arc<TaskContext>) -> Result<T, TaskError> + Send + 'static,
+        F: FnOnce(&TaskContext) -> Result<T, TaskError> + Send + 'static,
     {
         Task::blocking_with_progress(self, f, options)
     }
@@ -473,20 +473,20 @@ impl<T: Send + 'static> Task<T> {
         })
     }
 
-    pub fn with_progress<F, R>(
+    pub fn with_ctx<F, R>(
         manager: &TaskManager,
         f: F,
         options: Option<TaskOptions>,
     ) -> Box<Self>
     where
-        F: FnOnce(Arc<TaskContext>) -> R,
+        F: FnOnce(&TaskContext) -> R,
         R: Future<Output = Result<T, TaskError>> + Send + 'static,
     {
         let (ptx, prx) = tokio::sync::watch::channel(TaskProgress::default());
         let tc = TaskContext::with_progress(ptx);
         let ctx = tc.clone();
         let task = manager.spawn(
-            f(tc),
+            f(&tc),
             Some(ctx.clone()),
             Some(
                 options
@@ -509,13 +509,13 @@ impl<T: Send + 'static> Task<T> {
         options: Option<TaskOptions>,
     ) -> Box<Self>
     where
-        F: FnOnce(Arc<TaskContext>) -> Result<T, TaskError> + Send + 'static,
+        F: FnOnce(&TaskContext) -> Result<T, TaskError> + Send + 'static,
     {
         let (ptx, prx) = tokio::sync::watch::channel(TaskProgress::default());
         let tc = TaskContext::with_progress(ptx);
         let ctx = tc.clone();
         let task = manager.spawn_blocking(
-            move || f(tc),
+            move || f(&tc),
             Some(ctx.clone()),
             Some(
                 options

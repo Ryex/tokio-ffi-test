@@ -55,6 +55,16 @@ fn main() {
     }
 
     let generated_cpp = out_dir.join("generated.cpp");
+    let generated_h = out_dir.join("generated.h");
+
+    std::fs::copy(
+        generated_h,
+        crate_dir
+            .join("include")
+            .join("tasks-ffi")
+            .join("generated.h"),
+    )
+    .unwrap_or_else(|err| panic!("error copying generated header: {err}"));
 
     Zngur::from_zng_file(&main_zng_path)
         .with_cpp_file(&generated_cpp)
@@ -62,18 +72,21 @@ fn main() {
         .with_rs_file(out_dir.join("generated.rs"))
         .generate();
 
-    let my_build = &mut cc::Build::new();
-    let my_build = my_build
+    let build = &mut cc::Build::new();
+    let build = build
         .cpp(true)
+        .std("c++17")
         .compiler(&cxx)
         .include(crate_dir.join("include"))
         .include(&crate_dir)
         .include(&out_dir);
-    let my_build = || my_build.clone();
-
+    let build = || build.clone();
     // file may not exist if zngur determines it's not needed
     if generated_cpp.exists() {
-        my_build().file(&generated_cpp).compile("zngur_generated");
+        build().file(&generated_cpp).compile("zngur_generated");
     }
-    // my_build().file("ffi_impls.cpp").compile("ffi_impls");
+
+    let sources = ["src/tasks.cpp"];
+
+    build().files(sources).compile("tasksffi");
 }
