@@ -5,6 +5,8 @@ edition = "2024"
 
 [dependencies]
 cxx = { workspace = true, features = ["c++17"] }
+cxx-enumext = "0.0.3"
+# cxx-enumext = { path = "../../../cxx-ext/" }
 tokio = { workspace = true, features = [
   "rt",
   "rt-multi-thread",
@@ -31,4 +33,6 @@ thiserror = "2.0.12"
 futures-util = {version ="0.3.31", features = ["channel"]}
 
 [build-dependencies]
-cxx-build.workspace = true
+cc = "1.0"
+build-rs = "0.1.2"
+zngur = "0.6.0"

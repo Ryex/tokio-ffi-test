@@ -1,0 +1,204 @@
+type str {
+    wellknown_traits(?Sized);
+
+    fn to_owned(&self) -> ::std::string::String;
+}
+
+type bool {
+    #layout(size = 1, align = 1);
+    wellknown_traits(Copy);
+}
+
+mod ::std {
+    mod option {
+        type ::std::option::Option<&u64> {
+            #layout(size = 8, align = 8);
+            wellknown_traits(Debug, Copy);
+            
+            constructor None;
+            constructor Some(&u64);
+
+            fn unwrap(self) -> &u64;
+        }
+        type ::std::option::Option<&u16> {
+            #layout(size = 8, align = 8);
+            wellknown_traits(Debug, Copy);
+            
+            constructor None;
+            constructor Some(&u16);
+
+            fn unwrap(self) -> &u16;
+        }
+        type ::std::option::Option<&u8> {
+            #layout(size = 8, align = 8);
+            wellknown_traits(Debug, Copy);
+            
+            constructor None;
+            constructor Some(&u8);
+
+            fn unwrap(self) -> &u8;
+        }
+        type ::std::option::Option<usize> {
+            #layout(size = 16, align = 8);
+            wellknown_traits(Debug, Copy);
+            
+            constructor None;
+            constructor Some(usize);
+
+            fn unwrap(self) -> usize;
+        }
+
+    }
+    
+    mod vec {
+        type Vec<u64> {
+            #layout(size = 24, align = 8);
+            
+            fn new() -> Vec<u64>;
+            fn clone(&self) -> Vec<u64>;
+            fn push(&mut self, u64);
+            fn get(&self, usize) -> ::std::option::Option<&u64> deref [u64];
+            fn extend_from_slice(&mut self, &[u64]);
+        }
+
+        type Vec<u16> {
+            #layout(size = 24, align = 8);
+            
+            fn new() -> Vec<u16>;
+            fn clone(&self) -> Vec<u16>;
+            fn push(&mut self, u16);
+            fn get(&self, usize) -> ::std::option::Option<&u16> deref [u16];
+            fn extend_from_slice(&mut self, &[u16]);
+        }
+
+        type Vec<u8> {
+            #layout(size = 24, align = 8);
+            
+            fn new() -> Vec<u8>;
+            fn clone(&self) -> Vec<u8>;
+            fn push(&mut self, u8);
+            fn get(&self, usize) -> ::std::option::Option<&u8> deref [u8];
+            fn extend_from_slice(&mut self, &[u8]);
+        }
+    }
+   
+}
+
+type [u64] {
+    wellknown_traits(?Sized);
+
+    fn as_ptr(&self) -> *const u64;
+    fn len(&self) -> usize;
+    fn get(&self, usize) -> ::std::option::Option<&u64>;
+    fn to_vec(&self) -> ::std::vec::Vec<u64>;
+}
+
+type [u16] {
+    wellknown_traits(?Sized);
+
+    fn as_ptr(&self) -> *const u16;
+    fn len(&self) -> usize;
+    fn get(&self, usize) -> ::std::option::Option<&u16>;
+    fn to_vec(&self) -> ::std::vec::Vec<u16>;
+}
+
+type [u8] {
+    wellknown_traits(?Sized);
+
+    fn as_ptr(&self) -> *const u8;
+    fn len(&self) -> usize;
+    fn get(&self, usize) -> ::std::option::Option<&u8>;
+    fn to_vec(&self) -> ::std::vec::Vec<u8>;
+}
+
+mod ::std::slice {
+    fn from_raw_parts<u64>(*const u64, usize) -> &[u64];
+    fn from_raw_parts<u16>(*const u16, usize) -> &[u16];
+    fn from_raw_parts<u8>(*const u8, usize) -> &[u8];
+}
+
+/// for strings
+mod std {
+
+    mod string {
+        type String {
+            #layout(size = 24, align = 8);
+          
+            fn as_bytes(&self) -> &[u8];
+            fn as_mut_str(&mut self) -> &mut str;
+            fn as_str(&self) -> &str;
+            fn push_str(&mut self, &str);
+            fn capacity(&self) -> usize;
+            fn clear(&mut self);
+            fn reserve(&mut self, usize);
+            fn insert_str(&mut self, usize, &str);
+            fn len(&self) -> usize;
+            fn is_empty(&self) -> bool;
+
+            fn from_utf8(::std::vec::Vec<u8>) -> ::std::result::Result<String, FromUtf8Error>;
+            fn from_utf16(&[u16]) -> ::std::result::Result<String, FromUtf16Error>;
+            
+        }
+    }
+    
+    mod option {
+
+        type Option<&::std::string::String> {
+            #layout(size = 8, align = 8);
+
+            fn unwrap(self) -> &::std::string::String;
+        }
+
+        type Option<::std::string::String> {
+            #layout(size = 24, align = 8);
+
+            constructor None;
+            constructor Some(::std::string::String);
+
+            fn unwrap(self) -> ::std::string::String;
+        }
+    }
+
+    mod result {
+        type Result<::std::string::String, ::std::string::FromUtf8Error> {
+            #layout(size = 40, align = 8);
+        }
+        type Result<::std::string::String, ::std::string::FromUtf16Error> {
+            #layout(size = 24, align = 8);
+        }
+    }
+}
+
+/// for HashSet<String>
+mod std {
+
+    type collections::HashSet<string::String> {
+        #layout(size = 48, align = 8);
+        
+        fn iter(&self) -> ::std::collections::hash_set::Iter<string::String>;
+        fn len(&self) -> usize;
+        fn capacity(&self) -> usize;
+        fn is_empty(&self) -> bool;
+        fn clear(&mut self);
+        fn reserve(&mut self, usize);
+        fn contains(&self, &str) -> bool;
+        fn insert(&mut self, string::String) -> bool;
+        fn remove(&mut self, &str) -> bool;
+    }
+    
+    type collections::hash_set::Iter<string::String> {
+        #layout(size = 40, align = 8);
+        fn len(&self) -> usize;
+        fn size_hint(&self) -> (usize, option::Option<usize>);
+        fn count(self) -> usize;
+        fn next(&mut self) -> option::Option<&string::String>;
+    }
+}
+
+
+type (usize, ::std::option::Option<usize>) {
+    #layout(size = 24, align = 8);
+
+    fn lower(&self) -> usize use crate::ffi::SizeHintExt;
+    fn upper (&self) -> ::std::option::Option<usize> use crate::ffi::SizeHintExt;
+}

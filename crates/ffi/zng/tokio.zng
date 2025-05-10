@@ -1,0 +1,38 @@
+mod ::tokio {
+    mod task {
+        type Id {
+            #layout(size = 8, align = 8);
+            wellknown_traits(Copy);
+            
+            fn clone(&self) -> Id;
+
+            fn to_string(&self) -> ::std::string::String;
+        }
+        type AbortHandle {
+            #layout(size = 8, align = 8);
+            
+            fn clone(&self) -> AbortHandle;
+            fn abort(&self);
+            fn is_finished(&self) -> bool;
+            fn id(&self) -> Id;
+        }
+
+        type JoinHandle<()> {
+            #layout(size = 8, align = 8);
+
+            fn abort(&self);
+            fn is_finished(&self) -> bool;
+            fn abort_handle(&self) -> AbortHandle;
+            fn id(&self) -> Id;
+        }
+
+        type JoinHandle<crate::ffi::CxxAny> {
+            #layout(size = 8, align = 8);
+
+            fn abort(&self);
+            fn is_finished(&self) -> bool;
+            fn abort_handle(&self) -> AbortHandle;
+            fn id(&self) -> Id;
+        }
+    }
+}

@@ -1,0 +1,64 @@
+#convert_panic_to_exception
+#cpp_additional_includes "
+#include <tasks-ffi/types.hpp>
+"
+
+mod crate::tasks {
+
+    type TaskProgress {
+        #layout(size = 16, align = 8);
+
+        wellknown_traits(Copy);
+
+        fn progress(&self) -> u64;
+        fn maximum(&self) -> u64;
+    }
+
+    type TaskMetadata {
+        #layout(size = 112, align = 8);
+
+        fn id(&self) -> ::tokio::task::Id;
+        fn id_display(&self) -> ::std::string::String;
+        fn abort_handle(&self) -> ::tokio::task::AbortHandle;
+        fn name(&self) -> ::std::option::Option<&::std::string::String>;
+        fn tags(&self) -> &::std::collections::HashSet<::std::string::String>;
+    }
+
+    type TaskOptions {
+        #layout(size = 72, align = 8);
+
+        fn new() -> crate::tasks::TaskOptions;
+        fn clone(&self) -> crate::tasks::TaskOptions;
+        
+        fn name(&self) -> ::std::option::Option<&::std::string::String>;
+        fn set_name(
+            &mut self,
+            ::std::option::Option<::std::string::String>
+        ) -> &mut crate::tasks::TaskOptions;
+        
+        fn tags(&self) -> &::std::collections::HashSet<::std::string::String>;
+        fn tags_mut(
+            &mut self
+        ) -> &mut ::std::collections::HashSet<::std::string::String>;
+    }
+
+    type TaskContext {
+        #layout(size = 32, align = 8);
+
+        fn progress(&self) -> u64;
+        fn set_progress(&self, u64);
+        fn update(&self, u64);
+        fn progress_maximum(&self) -> u64;
+        fn set_progress_maximum(&self, u64);
+        fn is_cancelled(&self) -> bool;
+        fn cancel(&self);
+    }
+}
+
+type crate::ffi::CxxAny {
+    #layout(size = 16, align = 8);
+
+    constructor(ZngurCppOpaqueOwnedObject);
+
+    #cpp_value "0" "::task::ffi::CxxAny";
+}

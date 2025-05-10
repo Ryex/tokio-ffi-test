@@ -1,24 +1,79 @@
-use cxx_build::CFG;
+use std::{env, io::Write};
+
+use zngur::Zngur;
 
 fn main() {
-    // CFG.change_detection = true;
-    CFG.doxygen = true;
+    let zng_files = ["std.zng", "ffi.zng", "tokio.zng", "tasks.zng"];
 
-    cxx_build::bridges(&["src/ffi.rs"]) // returns a cc::Build
-        .include("include/")
-        .file("src/ffi.cc")
-        .file("src/functor.cc")
-        .file("src/lib.cc")
+    // build::rerun_if_changed("ffi_impls.cpp");
+
+    let cxx = env::var("CXX").unwrap_or("c++".to_owned());
+
+    let crate_dir = build::cargo_manifest_dir();
+    let out_dir = build::out_dir();
+
+    let zng_dir = crate_dir.join("zng");
+
+    let main_zng_path = out_dir.join("main.zng");
+    {
+        let mut main_zng =
+            std::fs::File::create(&main_zng_path).expect("could not opem main.zng out file");
+
+        for f in zng_files {
+            let path = zng_dir.join(f);
+            build::rerun_if_changed(&path);
+
+            let file = std::fs::File::open(&path)
+                .unwrap_or_else(|err| panic!("Can not open {path:?}: {err}"));
+            let reader = std::io::BufReader::new(file);
+
+            write!(&mut main_zng, "// {0:->80}\n// {f: ^80}\n// {0:->80}\n", "")
+                .unwrap_or_else(|err| panic!("error writing to output main.zng: {err}"));
+
+            let mut inside_include = false;
+            for (line_no, line) in std::io::BufRead::lines(reader).enumerate() {
+                let line_no = line_no + 1;
+                let line = line.unwrap_or_else(|err| {
+                    panic!("Failed to read line {line_no} of {path:?}:  {err}")
+                });
+
+                if !inside_include && line.starts_with("#cpp_additional_includes") {
+                    inside_include = true;
+                } else if inside_include && line.trim().ends_with("\"") {
+                    inside_include = false;
+                }
+
+                if !inside_include {
+                    writeln!(&mut main_zng, "{line: <80} // {f}:{line_no}")
+                        .unwrap_or_else(|err| panic!("error writing to output main.zng: {err}"));
+                } else {
+                    writeln!(&mut main_zng, "{line}")
+                        .unwrap_or_else(|err| panic!("error writing to output main.zng: {err}"));
+                }
+            }
+        }
+    }
+
+    let generated_cpp = out_dir.join("generated.cpp");
+
+    Zngur::from_zng_file(&main_zng_path)
+        .with_cpp_file(&generated_cpp)
+        .with_h_file(out_dir.join("generated.h"))
+        .with_rs_file(out_dir.join("generated.rs"))
+        .generate();
+
+    let my_build = &mut cc::Build::new();
+    let my_build = my_build
         .cpp(true)
-        .std("c++17")
-        .flag_if_supported("/Zc:__cplusplus")
-        .compile("cxx_enum_test");
+        .compiler(&cxx)
+        .include(crate_dir.join("include"))
+        .include(&crate_dir)
+        .include(&out_dir);
+    let my_build = || my_build.clone();
 
-    println!("cargo:rerun-if-changed=src/ffi.h");
-    println!("cargo:rerun-if-changed=src/ffi.cc");
-    println!("cargo:rerun-if-changed=src/functor.cc");
-    println!("cargo:rerun-if-changed=src/functor.h");
-    println!("cargo:rerun-if-changed=src/lib.rs");
-    println!("cargo:rerun-if-changed=src/lib.cc");
-    println!("cargo:rerun-if-changed=src/sync.h");
+    // file may not exist if zngur determines it's not needed
+    if generated_cpp.exists() {
+        my_build().file(&generated_cpp).compile("zngur_generated");
+    }
+    // my_build().file("ffi_impls.cpp").compile("ffi_impls");
 }
