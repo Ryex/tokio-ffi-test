@@ -1,7 +1,8 @@
 use std::{
     collections::{HashMap, HashSet},
+    ffi::OsString,
+    fmt::Display,
     io,
-    path::PathBuf,
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
@@ -19,12 +20,73 @@ use tokio::{
 pub enum FfiError {
     #[error("error processing request: {0}")]
     Reqwest(#[from] reqwest::Error),
-    #[error("error creating file '{0}' : {1}")]
-    CreateFile(PathBuf, io::Error),
-    #[error("error writing to file '{0}' : {1}")]
-    FileWrite(PathBuf, io::Error),
-    #[error("{0}")]
-    TaskError(#[from] TaskSpawnError),
+    #[error("error creating file '{:?}' : {}", .0.path, .0.error)]
+    CreateFile(IoError),
+    #[error("error writing to file '{:?}' : {}", .0.path, .0.error)]
+    FileWrite(IoError),
+    #[error("Error {}: {}", .0.code, .0.error)]
+    External(ExternalFfiError),
+}
+
+impl FfiError {
+    pub fn as_external(&self) -> Option<&ExternalFfiError> {
+        if let Self::External(external) = &self {
+            Some(external)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_io(&self) -> Option<&IoError> {
+        match &self {
+            Self::CreateFile(err) | Self::FileWrite(err) => Some(err),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Error, Debug)]
+pub struct IoError {
+    pub path: OsString,
+    pub error: io::Error,
+}
+
+impl IoError {
+    pub fn path(&self) -> OsString {
+        self.path.clone()
+    }
+
+    pub fn error(&self) -> String {
+        self.error.to_string()
+    }
+}
+
+impl Display for IoError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.error)
+    }
+}
+
+#[derive(Error, Debug)]
+pub struct ExternalFfiError {
+    code: u32,
+    error: String,
+}
+
+impl ExternalFfiError {
+    pub fn new(code: u32, error: String) -> Self {
+        ExternalFfiError { code, error }
+    }
+
+    pub fn code(&self) -> u32 {
+        self.code
+    }
+}
+
+impl Display for ExternalFfiError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.error)
+    }
 }
 
 #[derive(Error, Debug)]
@@ -35,6 +97,12 @@ pub enum TaskSpawnError {
     Error(String),
 }
 
+impl TaskSpawnError {
+    pub fn is_awaited(&self) -> bool {
+        matches!(self, Self::TaskAwaited)
+    }
+}
+
 #[derive(Error, Debug)]
 pub enum TaskError {
     #[error("task cancelled")]
@@ -42,7 +110,43 @@ pub enum TaskError {
     #[error("task join error: {0}")]
     JoinError(#[from] tokio::task::JoinError),
     #[error("{0}")]
-    SpanwError(#[from] TaskSpawnError),
+    SpawnError(#[from] TaskSpawnError),
+    #[error("{0}")]
+    Error(#[from] FfiError),
+}
+
+impl TaskError {
+    pub fn as_task(&self) -> Option<&TaskError> {
+        if matches!(&self, Self::TaskCancelled) {
+            Some(self)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_join(&self) -> Option<&tokio::task::JoinError> {
+        if let Self::JoinError(je) = &self {
+            Some(je)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_spawn(&self) -> Option<&TaskSpawnError> {
+        if let Self::SpawnError(se) = &self {
+            Some(se)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_error(&self) -> Option<&FfiError> {
+        if let Self::Error(err) = &self {
+            Some(err)
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Debug, Default, Copy, Clone)]
@@ -439,6 +543,7 @@ impl<T: Send + 'static> TaskHandle<T> {
 }
 
 pub struct Task<T: Send + 'static> {
+    id: tokio::task::Id,
     manager: TaskManager,
     handle: Mutex<Option<TaskHandle<Result<T, TaskError>>>>,
     ctx: Option<Arc<TaskContext>>,
@@ -453,6 +558,7 @@ impl<T: Send + 'static> Task<T> {
     {
         let task = manager.spawn(f(), None, options.map(TaskOptions::to_spawn_options));
         Box::new(Task {
+            id: task.id(),
             manager: manager.clone(),
             handle: Mutex::new(Some(TaskHandle::Owned(task))),
             ctx: None,
@@ -466,6 +572,7 @@ impl<T: Send + 'static> Task<T> {
     {
         let task = manager.spawn_blocking(f, None, options.map(TaskOptions::to_spawn_options));
         Box::new(Task {
+            id: task.id(),
             manager: manager.clone(),
             handle: Mutex::new(Some(TaskHandle::Owned(task))),
             ctx: None,
@@ -473,11 +580,7 @@ impl<T: Send + 'static> Task<T> {
         })
     }
 
-    pub fn with_ctx<F, R>(
-        manager: &TaskManager,
-        f: F,
-        options: Option<TaskOptions>,
-    ) -> Box<Self>
+    pub fn with_ctx<F, R>(manager: &TaskManager, f: F, options: Option<TaskOptions>) -> Box<Self>
     where
         F: FnOnce(&TaskContext) -> R,
         R: Future<Output = Result<T, TaskError>> + Send + 'static,
@@ -496,6 +599,7 @@ impl<T: Send + 'static> Task<T> {
             ),
         );
         Box::new(Task {
+            id: task.id(),
             manager: manager.clone(),
             handle: Mutex::new(Some(TaskHandle::Owned(task))),
             ctx: Some(ctx),
@@ -525,6 +629,7 @@ impl<T: Send + 'static> Task<T> {
             ),
         );
         Box::new(Task {
+            id: task.id(),
             manager: manager.clone(),
             handle: Mutex::new(Some(TaskHandle::Owned(task))),
             ctx: Some(ctx),
@@ -554,22 +659,24 @@ impl<T: Send + 'static> Task<T> {
             *handle_lock = Some(continued);
             handle
         };
+        let task = self.manager.spawn(
+            async move {
+                let res = handle
+                    .await
+                    .map_err(Into::<TaskError>::into)
+                    .and_then(|ret| ret);
+                tokio::task::spawn_blocking(move || callback(res))
+                    .await
+                    .map_err(Into::<TaskError>::into)
+                    .and_then(|ret| ret)
+            },
+            None,
+            options.map(TaskOptions::to_spawn_options),
+        );
         Ok(Box::new(Task {
+            id: task.id(),
             manager: self.manager.clone(),
-            handle: Mutex::new(Some(TaskHandle::Owned(self.manager.spawn(
-                async move {
-                    let res = handle
-                        .await
-                        .map_err(Into::<TaskError>::into)
-                        .and_then(|ret| ret);
-                    tokio::task::spawn_blocking(move || callback(res))
-                        .await
-                        .map_err(Into::<TaskError>::into)
-                        .and_then(|ret| ret)
-                },
-                None,
-                options.map(TaskOptions::to_spawn_options),
-            )))),
+            handle: Mutex::new(Some(TaskHandle::Owned(task))),
             ctx: None,
             progress: None,
         }))
@@ -596,29 +703,29 @@ impl<T: Send + 'static> Task<T> {
         let (ptx, prx) = tokio::sync::watch::channel(TaskProgress::default());
         let tc = TaskContext::with_progress(ptx);
         let ctx = tc.clone();
+        let task = self.manager.spawn(
+            async move {
+                let res = handle
+                    .await
+                    .map_err(Into::<TaskError>::into)
+                    .and_then(|ret| ret);
+                tokio::task::spawn_blocking(move || callback(res, &tc))
+                    .await
+                    .map_err(Into::<TaskError>::into)
+                    .and_then(|ret| ret)
+            },
+            Some(ctx.clone()),
+            Some(
+                options
+                    .unwrap_or_default()
+                    .to_spawn_options()
+                    .with_progress(prx.clone()),
+            ),
+        );
         Ok(Box::new(Task {
+            id: task.id(),
             manager: self.manager.clone(),
-            handle: Mutex::new(Some(TaskHandle::Owned(
-                self.manager.spawn(
-                    async move {
-                        let res = handle
-                            .await
-                            .map_err(Into::<TaskError>::into)
-                            .and_then(|ret| ret);
-                        tokio::task::spawn_blocking(move || callback(res, &tc))
-                            .await
-                            .map_err(Into::<TaskError>::into)
-                            .and_then(|ret| ret)
-                    },
-                    Some(ctx.clone()),
-                    Some(
-                        options
-                            .unwrap_or_default()
-                            .to_spawn_options()
-                            .with_progress(prx.clone()),
-                    ),
-                ),
-            ))),
+            handle: Mutex::new(Some(TaskHandle::Owned(task))),
             ctx: Some(ctx),
             progress: Some(prx),
         }))
@@ -650,12 +757,16 @@ impl<T: Send + 'static> Task<T> {
             let mut recv = recv.clone();
             let task = self.manager.spawn_raw(async move {
                 while (recv.changed().await).is_ok() {
-                    let _ = callback(&recv.borrow());
+                    callback(&recv.borrow());
                 }
             });
             Some(task.abort_handle())
         } else {
             None
         }
+    }
+
+    pub fn id(&self) -> tokio::task::Id {
+        self.id
     }
 }

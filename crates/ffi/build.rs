@@ -78,15 +78,28 @@ fn main() {
         .std("c++17")
         .compiler(&cxx)
         .include(crate_dir.join("include"))
-        .include(&crate_dir)
-        .include(&out_dir);
+        .include(&crate_dir);
+    // .include(&out_dir);
     let build = || build.clone();
     // file may not exist if zngur determines it's not needed
-    if generated_cpp.exists() {
-        build().file(&generated_cpp).compile("zngur_generated");
+
+    let headers = ["include/tasks-ffi/tasks.hpp", "include/tasks-ffi/types.hpp"];
+    for header in &headers {
+        build::rerun_if_changed(header);
     }
 
-    let sources = ["src/tasks.cpp"];
+    let sources: Vec<&str> = vec!["src/tasks.cpp"];
 
-    build().files(sources).compile("tasksffi");
+    let mut tasksffi = build();
+    tasksffi.files(&sources);
+
+    if generated_cpp.exists() {
+        tasksffi.file(&generated_cpp);
+    }
+
+    for src in &sources {
+        build::rerun_if_changed(src);
+    }
+
+    tasksffi.compile("tasksffi")
 }

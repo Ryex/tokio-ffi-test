@@ -34,5 +34,11 @@ mod ::tokio {
             fn abort_handle(&self) -> AbortHandle;
             fn id(&self) -> Id;
         }
+        
+        type JoinError {
+            #layout(size = 24, align = 8);
+            
+            fn to_string(&self) -> ::std::string::String;
+        }
     }
 }

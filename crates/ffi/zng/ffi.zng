@@ -1,4 +1,3 @@
-#convert_panic_to_exception
 #cpp_additional_includes "
 #include <tasks-ffi/types.hpp>
 "

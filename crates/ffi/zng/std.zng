@@ -1,6 +1,9 @@
 type str {
     wellknown_traits(?Sized);
 
+    fn as_ptr(&self) -> *const u8;
+    fn len(&self) -> usize;
+    fn to_string(&self) -> ::std::string::String;
     fn to_owned(&self) -> ::std::string::String;
 }
 
@@ -201,4 +204,42 @@ type (usize, ::std::option::Option<usize>) {
 
     fn lower(&self) -> usize use crate::ffi::SizeHintExt;
     fn upper (&self) -> ::std::option::Option<usize> use crate::ffi::SizeHintExt;
+}
+
+mod ::std {
+    mod ffi {
+        type OsString {
+            #layout(size = 24, align = 8);
+
+            fn clone(&self) -> OsString;
+            fn as_os_str(&self) -> &OsStr;
+            fn into_encoded_bytes(self) -> ::std::vec::Vec<u8>;
+
+            fn is_empty(&self) -> bool deref OsStr; 
+            fn to_string_lossy(&self) -> ::std::borrow::Cow<str> deref OsStr;
+            fn to_os_string(&self) -> OsString deref OsStr;
+            fn as_encoded_bytes(&self) -> &[u8] deref OsStr;
+            
+        }
+        
+        type OsStr {
+            wellknown_traits(?Sized);
+            
+            fn is_empty(&self) -> bool;
+            fn to_string_lossy(&self) -> ::std::borrow::Cow<str>;
+            fn to_os_string(&self) -> OsString;
+            fn as_encoded_bytes(&self) -> &[u8];
+        }
+    }
+
+    mod borrow {
+        type Cow<str> {
+            #layout(size = 24, align = 8);
+
+            fn as_ptr(&self) -> *const u8 deref str;
+            fn len(&self) -> usize deref str;
+            fn to_string(&self) -> ::std::string::String deref str;
+            fn to_owned(&self) -> ::std::string::String deref str;
+        }
+    }
 }

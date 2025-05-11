@@ -126,12 +126,71 @@ mod std {
             constructor None;
             constructor Some(crate::tasks::TaskOptions);
 
+            fn is_some(&self) -> bool;
             fn unwrap(self) -> crate::tasks::TaskOptions;
         }
 
         type Option<::tokio::task::AbortHandle> {
             #layout(size = 8, align = 8);
+            fn is_some(&self) -> bool;
             fn unwrap(self) -> ::tokio::task::AbortHandle;
+            fn as_ref(&self) -> Option<&::tokio::task::AbortHandle>;
+        }
+
+        type Option<&::tokio::task::AbortHandle> {
+            #layout(size = 8, align = 8);
+            fn is_some(&self) -> bool;
+            fn unwrap(self) -> &::tokio::task::AbortHandle;
+        }
+
+        type Option<&::tokio::task::JoinError> {
+            #layout(size = 8, align = 8);
+            fn is_some(&self) -> bool;
+            fn unwrap(self) -> &::tokio::task::JoinError;
+        }
+
+        type Option<&crate::tasks::TaskError> {
+            #layout(size = 8, align = 8);
+            fn is_some(&self) -> bool;
+            fn unwrap(self) -> &crate::tasks::TaskError;
+        }
+
+        type Option<crate::tasks::TaskError> {
+            #layout(size = 40, align = 8);
+            fn is_some(&self) -> bool;
+            fn unwrap(self) -> crate::tasks::TaskError;
+            fn as_ref(&self) -> Option<&crate::tasks::TaskError>;
+        }
+
+        type Option<&crate::tasks::TaskSpawnError> {
+            #layout(size = 8, align = 8);
+            fn is_some(&self) -> bool;
+            fn unwrap(self) -> &crate::tasks::TaskSpawnError;
+        }
+
+        type Option<crate::tasks::TaskSpawnError> {
+            #layout(size = 24, align = 8);
+            fn is_some(&self) -> bool;
+            fn unwrap(self) -> crate::tasks::TaskSpawnError;
+            fn as_ref(&self) -> Option<&crate::tasks::TaskSpawnError>;
+        }
+
+        type Option<&crate::tasks::FfiError> {
+            #layout(size = 8, align = 8);
+            fn is_some(&self) -> bool;
+            fn unwrap(self) -> &crate::tasks::FfiError;
+        }
+
+        type Option<&crate::tasks::ExternalFfiError> {
+            #layout(size = 8, align = 8);
+            fn is_some(&self) -> bool;
+            fn unwrap(self) -> &crate::tasks::ExternalFfiError;
+        }
+
+        type Option<&crate::tasks::IoError> {
+            #layout(size = 8, align = 8);
+            fn is_some(&self) -> bool;
+            fn unwrap(self) -> &crate::tasks::IoError;
         }
     }
 }
@@ -141,10 +200,36 @@ mod crate::tasks {
 
     type TaskSpawnError {
         #layout(size = 24, align = 8);
+        fn to_string(&self) -> ::std::string::String;
     }
 
     type TaskError {
+        #layout(size = 40, align = 8);
+
+        constructor Error(FfiError);
+
+        fn to_string(&self) -> ::std::string::String;
+    }
+
+    type FfiError {
+        #layout(size = 40, align = 8);
+
+        constructor External(ExternalFfiError);
+
+        fn to_string(&self) -> ::std::string::String;
+    }
+
+    type IoError {
         #layout(size = 32, align = 8);
+        fn to_string(&self) -> ::std::string::String;
+    }
+
+    type ExternalFfiError {
+        #layout(size = 32, align = 8);
+        
+        fn new(u32, ::std::string::String) -> ExternalFfiError;
+        
+        fn to_string(&self) -> ::std::string::String;
     }
 
     type crate::tasks::TaskManager {
@@ -217,10 +302,12 @@ mod crate::tasks {
     }
 
     type Task<()> {
-        #layout(size = 64, align = 8);
+        #layout(size = 72, align = 8);
+        fn id(&self) -> ::tokio::task::Id;
         fn manager(&self) -> &TaskManager;
         fn is_finished(&self) -> bool;
         fn is_cancelled(&self) -> bool;
+        fn cancel(&self);
         fn on_progress(
             &self,
             Box<dyn Fn(&crate::tasks::TaskProgress) + Send>
@@ -304,10 +391,12 @@ mod crate::tasks {
 
 
     type Task<crate::ffi::CxxAny> {
-        #layout(size = 64, align = 8);
+        #layout(size = 72, align = 8);
+        fn id(&self) -> ::tokio::task::Id;
         fn manager(&self) -> &TaskManager;
         fn is_finished(&self) -> bool;
         fn is_cancelled(&self) -> bool;
+        fn cancel(&self);
         fn on_progress(
             &self,
             Box<dyn Fn(&crate::tasks::TaskProgress) + Send>
@@ -421,13 +510,23 @@ mod ::std {
 
             constructor Ok(Box<crate::tasks::Task<()>>);
             constructor Err(crate::tasks::TaskSpawnError);
+            
+            fn is_ok(&self) -> bool;
+            fn is_err(&self) -> bool;
+            fn unwrap(self) -> Box<crate::tasks::Task<()>>;
+            fn err(self) -> ::std::option::Option<crate::tasks::TaskSpawnError>;
         }
 
         type Result<(), crate::tasks::TaskError> {
-            #layout(size = 32, align = 8);
+            #layout(size = 40, align = 8);
 
             constructor Ok(());
             constructor Err(crate::tasks::TaskError);
+            
+            fn is_ok(&self) -> bool;
+            fn is_err(&self) -> bool;
+            fn unwrap(self) -> ();
+            fn err(self) -> ::std::option::Option<crate::tasks::TaskError>;
         }
 
         type Result<
@@ -438,22 +537,34 @@ mod ::std {
 
             constructor Ok(Box<crate::tasks::Task<crate::ffi::CxxAny>>);
             constructor Err(crate::tasks::TaskSpawnError);
+            
+            fn is_ok(&self) -> bool;
+            fn is_err(&self) -> bool;
+            fn unwrap(self) -> Box<crate::tasks::Task<crate::ffi::CxxAny>>;
+            fn err(self) -> ::std::option::Option<crate::tasks::TaskSpawnError>;
         }
 
         type Result<crate::ffi::CxxAny, crate::tasks::TaskError> {
-            #layout(size = 32, align = 8);
+            #layout(size = 40, align = 8);
 
             constructor Ok(crate::ffi::CxxAny);
             constructor Err(crate::tasks::TaskError);
+
+            fn is_ok(&self) -> bool;
+            fn is_err(&self) -> bool;
+            fn unwrap(self) -> crate::ffi::CxxAny;
+            fn err(self) -> ::std::option::Option<crate::tasks::TaskError>;
         }
     }
 }
 
 type Box<crate::tasks::Task<()>> {
     #layout(size = 8, align = 8);
+    fn as_ref(&self) -> &crate::tasks::Task<()>;
 }
 
 type Box<crate::tasks::Task<crate::ffi::CxxAny>> {
     #layout(size = 8, align = 8);
+    fn as_ref(&self) -> &crate::tasks::Task<crate::ffi::CxxAny>;
 }
 

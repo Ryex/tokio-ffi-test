@@ -1,96 +1,111 @@
 #include "tasks-ffi/tasks.hpp"
-#include "tasks-ffi/generated.h"
-#include <optional>
-
-using rust::Bool;
-using rust::Send;
-using rust::Unit;
-template <typename T> using Option = rust::std::option::Option<T>;
-template <typename T, typename E>
-using Result = rust::std::result::Result<T, E>;
-
-using String = rust::std::string::String;
-using Str = rust::Str;
-
-template <typename T> using Ref = rust::Ref<T>;
-
-template <typename T> using Box = rust::Box<T>;
-template <typename... T> using Dyn = rust::Dyn<T...>;
-template <typename... T> using Fn = rust::Fn<T...>;
-template <typename... T> using BoxDyn = Box<Dyn<T...>>;
-
-using RustTaskOptions = rust::crate::tasks::TaskOptions;
-using TaskError = rust::crate::tasks::TaskError;
-using TaskContext = rust::crate::tasks::TaskContext;
-
-Option<RustTaskOptions>
-transform_options(std::optional<task::TaskOptions> &options) {
-  Option<RustTaskOptions> rust_opts = Option<RustTaskOptions>::None();
-  if (options.has_value()) {
-    auto opts = options.value();
-    auto ropts = RustTaskOptions::new_();
-    if (opts.name.has_value()) {
-      ropts.set_name(Option<String>::Some(
-          Str::from_char_star(opts.name.value().c_str()).to_owned()));
-    }
-    auto tags = ropts.tags_mut();
-    for (auto &tag : opts.tags) {
-      tags.insert(Str::from_char_star(tag.c_str()).to_owned());
-    }
-  }
-  return rust_opts;
-}
 
 namespace task {
 
-TaskManager::TaskManager()
-    : m_manager(rust::crate::tasks::TaskManager::new_()) {}
+task_spawn_error::task_spawn_error(TaskSpawnError&& err) : task_spawn_error(err.to_string()) {}
+task_spawn_error::task_spawn_error(String&& err)
+    : std::runtime_error(std::string(reinterpret_cast<const char*>(err.as_bytes().as_ptr()), err.as_bytes().len()))
+{}
 
-template <typename T>
-Task<T> TaskManager::newTask(std::function<T()> f,
-                             std::optional<TaskOptions> options) {
-  return Task<T>(m_manager.new_blocking(
-      BoxDyn<Fn<Result<RustCxxAny, TaskError>>, Send>::make_box(
-          [f = std::move(f)]() {
-            return Result<RustCxxAny, TaskError>::Ok(
-                rust::ZngurCppOpaqueOwnedObject::build<task::ffi::CxxAny>(f()));
-          }),
-      transform_options(options)));
-}
-template <typename T>
-Task<T> TaskManager::newTask(std::function<T(Ref<TaskContext>)> f,
-                             std::optional<TaskOptions> options) {
-  return Task<T>(m_manager.new_blocking_with_ctx(
-      BoxDyn<Fn<Ref<TaskContext>, Result<RustCxxAny, TaskError>>, Send>::make_box(
-          [f = std::move(f)](Ref<TaskContext> ctx) {
-            return Result<RustCxxAny, TaskError>::Ok(
-                rust::ZngurCppOpaqueOwnedObject::build<task::ffi::CxxAny>(f(ctx)));
-          }),
-      transform_options(options)));
+AbortHandle::AbortHandle(Option<FfiAbortHandle>&& handle) : m_handle(std::move(handle)) {}
+
+void AbortHandle::abort()
+{
+    if (m_handle.is_some()) {
+        m_handle.as_ref().unwrap().abort();
+    }
 }
 
-template <typename T>
-Task<T>::Task(FfiTaskAny &&task) : m_task(std::move(task)) {}
-
-Task<void>::Task(FfiTaskVoid &&task) : m_task(std::move(task)) {}
+TaskManager::TaskManager() : m_manager(rust::crate::tasks::TaskManager::new_()) {}
 
 template <typename T>
-template <typename T2>
-Task<T2> Task<T>::then(std::function<T2(T)>, std::function<T2(Ref<TaskError>)>,
-                       std::optional<TaskOptions> options) {}
-template <typename T>
-template <typename T2>
-Task<T2> Task<T>::then(std::function<T2(T, Ref<TaskContext>)>,
-                       std::function<T2(Ref<TaskError>, Ref<TaskContext>)>,
-                       std::optional<TaskOptions> options) {}
+Task<T>::Task(FfiTaskAny&& task) : m_task(std::move(task))
+{}
 
-template <typename T2>
-Task<T2> Task<void>::then(std::function<T2()>,
-                          std::function<T2(Ref<TaskError>)>,
-                          std::optional<TaskOptions> options) {}
-template <typename T2>
-Task<T2> Task<void>::then(std::function<T2(Ref<TaskContext>)>,
-                          std::function<T2(Ref<TaskError>, Ref<TaskContext>)>,
-                          std::optional<TaskOptions> options) {}
+Task<void>::Task(FfiTaskVoid&& task) : m_task(std::move(task)) {}
 
-} // namespace task
+template <>
+Task<void> TaskManager::newTask(std::function<void()> f, std::optional<TaskOptions> options)
+{
+    return Task<void>(
+        m_manager.new_blocking(BoxDyn<Fn<Result<Unit, TaskError>>, Send>::make_box([f = std::move(f)]() { return trycatch_unit(f); }),
+                               transform_options_ffi(options)));
+}
+template <>
+Task<void> TaskManager::newTask(std::function<void(Ref<TaskContext>)> f, std::optional<TaskOptions> options)
+{
+    return Task<void>(m_manager.new_blocking_with_ctx(BoxDyn<Fn<Ref<TaskContext>, Result<Unit, TaskError>>, Send>::make_box(
+                                                          [f = std::move(f)](Ref<TaskContext> ctx) { return trycatch_unit(f, ctx); }),
+                                                      transform_options_ffi(options)));
+}
+
+template <>
+Task<void> Task<void>::then(std::function<void()> func, std::function<void(Ref<TaskError>)> fail, std::optional<TaskOptions> options)
+{
+    auto result = m_task.as_ref().then(BoxDyn<Fn<Result<Unit, TaskError>, Result<Unit, TaskError>>, Send>::make_box(
+                                           [func = std::move(func), fail = std::move(fail)](Result<Unit, TaskError> result) {
+                                               if (result.is_ok()) {
+                                                   return trycatch_unit(func);
+                                               } else {
+                                                   return trycatch_unit(fail, result.err().unwrap());
+                                               }
+                                           }),
+                                       transform_options_ffi(options));
+    if (result.is_err()) {
+        throw task_spawn_error(result.err().unwrap());
+    }
+    return result.unwrap();
+}
+
+template <>
+Task<void> Task<void>::then(std::function<void(Ref<TaskContext>)> func,
+                            std::function<void(Ref<TaskError>, Ref<TaskContext>)> fail,
+                            std::optional<TaskOptions> options)
+{
+    auto result = m_task.as_ref().then_with_ctx(
+        BoxDyn<Fn<Result<Unit, TaskError>, Ref<TaskContext>, Result<Unit, TaskError>>, Send>::make_box(
+            [func = std::move(func), fail = std::move(fail)](Result<Unit, TaskError> result, Ref<TaskContext> ctx) {
+                if (result.is_ok()) {
+                    return trycatch_unit(func, ctx);
+                } else {
+                    return trycatch_unit(fail, result.err().unwrap(), ctx);
+                }
+            }),
+        transform_options_ffi(options));
+
+    if (result.is_err()) {
+        throw task_spawn_error(result.err().unwrap());
+    }
+    return result.unwrap();
+}
+
+AbortHandle Task<void>::on_progress(std::function<void(Ref<TaskProgress>)> func) const
+{
+    return AbortHandle(m_task.as_ref().on_progress(
+        Box<Dyn<Fn<Ref<TaskProgress>, Unit>, Send>>::make_box([func = std::move(func)](Ref<TaskProgress> progress) {
+            func(progress);
+            return Unit{};
+        })));
+}
+
+TokioId Task<void>::id() const
+{
+    return m_task.as_ref().id();
+}
+
+bool Task<void>::is_finished() const
+{
+    return m_task.as_ref().is_finished();
+}
+
+bool Task<void>::is_cancelled() const
+{
+    return m_task.as_ref().is_cancelled();
+}
+
+void Task<void>::cancel()
+{
+    m_task.as_ref().cancel();
+}
+
+}  // namespace task
