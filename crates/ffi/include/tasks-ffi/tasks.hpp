@@ -17,16 +17,6 @@ struct TaskOptions {
     std::vector<std::string> tags;
 };
 
-using RustCxxAny = rust::crate::ffi::CxxAny;
-
-using RefTaskError = rust::Ref<rust::crate::tasks::TaskError>;
-using TaskSpawnError = rust::crate::tasks::TaskSpawnError;
-using RefTaskContext = rust::Ref<rust::crate::tasks::TaskContext>;
-
-using FfiTaskAny = rust::Box<rust::crate::tasks::Task<rust::crate::ffi::CxxAny>>;
-using FfiTaskVoid = rust::Box<rust::crate::tasks::Task<rust::Unit>>;
-using TaskProgress = rust::crate::tasks::TaskProgress;
-
 using rust::Bool;
 using rust::Send;
 using rust::Unit;
@@ -50,11 +40,24 @@ using Fn = rust::Fn<T...>;
 template <typename... T>
 using BoxDyn = Box<Dyn<T...>>;
 
-using RustTaskOptions = rust::crate::tasks::TaskOptions;
+using RustCxxAny = rust::crate::ffi::CxxAny;
+
 using TaskError = rust::crate::tasks::TaskError;
+using RefTaskError = Ref<TaskError>;
+
+using TaskSpawnError = rust::crate::tasks::TaskSpawnError;
+
+using FfiTaskAny = rust::Box<rust::crate::tasks::Task<rust::crate::ffi::CxxAny>>;
+using FfiTaskVoid = rust::Box<rust::crate::tasks::Task<rust::Unit>>;
+
+using TaskContext = rust::crate::tasks::TaskContext;
+using RefTaskContext = Ref<TaskContext>;
+using TaskProgress = rust::crate::tasks::TaskProgress;
+using RefTaskProgress = Ref<TaskProgress>;
+
+using RustTaskOptions = rust::crate::tasks::TaskOptions;
 using FfiError = rust::crate::tasks::FfiError;
 using ExternalFfiError = rust::crate::tasks::ExternalFfiError;
-using TaskContext = rust::crate::tasks::TaskContext;
 using FfiAbortHandle = rust::tokio::task::AbortHandle;
 using TokioId = rust::tokio::task::Id;
 
@@ -106,6 +109,10 @@ class Task {
     bool is_cancelled() const;
     void cancel();
 };
+
+template <typename T>
+Task<T>::Task(FfiTaskAny&& task) : m_task(std::move(task))
+{}
 
 template <>
 class Task<void> {
@@ -168,8 +175,8 @@ inline Option<RustTaskOptions> transform_options_ffi(std::optional<task::TaskOpt
     return rust_opts;
 }
 
-template <typename T, typename... Args>
-inline Result<RustCxxAny, TaskError> trycatch_any(std::function<T(Args...)>&& func, Args&&... args)
+template <typename Try, typename... Args>
+inline Result<RustCxxAny, TaskError> trycatch_any(Try&& func, Args&&... args)
 {
     try {
         return Result<RustCxxAny, TaskError>::Ok(
@@ -256,10 +263,11 @@ Task<T2> Task<T>::then(std::function<T2(T, Ref<TaskContext>)> func,
 template <typename T>
 Task<void> Task<T>::then(std::function<void(T)> func, std::function<void(Ref<TaskError>)> fail, std::optional<TaskOptions> options)
 {
-    auto result = m_task.as_ref().then(BoxDyn<Fn<Result<RustCxxAny, TaskError>, Result<RustCxxAny, TaskError>>, Send>::make_box(
+    auto result = m_task.as_ref().then(BoxDyn<Fn<Result<RustCxxAny, TaskError>, Result<Unit, TaskError>>, Send>::make_box(
                                            [func = std::move(func), fail = std::move(fail)](Result<RustCxxAny, TaskError> result) {
                                                if (result.is_ok()) {
-                                                   return trycatch_unit(func, result.unwrap().cpp().take<T>());
+                                                   task::ffi::CxxAny ret = result.unwrap().cpp();
+                                                   return trycatch_unit(func, ret.cast<T>());
                                                } else {
                                                    return trycatch_unit(fail, result.err().unwrap());
                                                }
@@ -276,7 +284,7 @@ Task<void> Task<T>::then(std::function<void(T, Ref<TaskContext>)> func,
                          std::optional<TaskOptions> options)
 {
     auto result = m_task.as_ref().then_with_ctx(
-        BoxDyn<Fn<Result<RustCxxAny, TaskError>, Ref<TaskContext>, Result<RustCxxAny, TaskError>>, Send>::make_box(
+        BoxDyn<Fn<Result<RustCxxAny, TaskError>, Ref<TaskContext>, Result<Unit, TaskError>>, Send>::make_box(
             [func = std::move(func), fail = std::move(fail)](Result<RustCxxAny, TaskError> result, Ref<TaskContext> ctx) {
                 if (result.is_ok()) {
                     return trycatch_unit(func, result.unwrap().cpp().take<T>(), ctx);

@@ -18,10 +18,6 @@ void AbortHandle::abort()
 
 TaskManager::TaskManager() : m_manager(rust::crate::tasks::TaskManager::new_()) {}
 
-template <typename T>
-Task<T>::Task(FfiTaskAny&& task) : m_task(std::move(task))
-{}
-
 Task<void>::Task(FfiTaskVoid&& task) : m_task(std::move(task)) {}
 
 template <>

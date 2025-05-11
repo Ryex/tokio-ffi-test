@@ -56,21 +56,25 @@ fn main() {
 
     let generated_cpp = out_dir.join("generated.cpp");
     let generated_h = out_dir.join("generated.h");
-
-    std::fs::copy(
-        generated_h,
+    let target_h = 
         crate_dir
             .join("include")
             .join("tasks-ffi")
-            .join("generated.h"),
-    )
-    .unwrap_or_else(|err| panic!("error copying generated header: {err}"));
+            .join("generated.h");
 
     Zngur::from_zng_file(&main_zng_path)
         .with_cpp_file(&generated_cpp)
         .with_h_file(out_dir.join("generated.h"))
         .with_rs_file(out_dir.join("generated.rs"))
         .generate();
+
+    println!("copying {generated_h:?} to {target_h:?}");
+
+    std::fs::copy(
+        &generated_h,
+        &target_h
+    )
+    .unwrap_or_else(|err| panic!("error copying generated header: {err}"));
 
     let build = &mut cc::Build::new();
     let build = build

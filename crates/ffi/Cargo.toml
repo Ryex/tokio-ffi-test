@@ -3,10 +3,11 @@ name = "tokio-ffi-test"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+crate-type=["staticlib", "cdylib"]
+
+
 [dependencies]
-cxx = { workspace = true, features = ["c++17"] }
-cxx-enumext = "0.0.3"
-# cxx-enumext = { path = "../../../cxx-ext/" }
 tokio = { workspace = true, features = [
   "rt",
   "rt-multi-thread",
