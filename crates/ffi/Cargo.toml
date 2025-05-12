@@ -3,6 +3,8 @@ name = "tokio-ffi-test"
 version = "0.1.0"
 edition = "2024"
 
+build = "build/build.rs"
+
 [lib]
 crate-type=["staticlib", "cdylib"]
 
@@ -32,8 +34,13 @@ reqwest = { workspace = true, default-features = false, features = [
 ] }
 thiserror = "2.0.12"
 futures-util = {version ="0.3.31", features = ["channel"]}
+enum-as-inner = "0.6.1"
 
 [build-dependencies]
 cc = "1.0"
 build-rs = "0.1.2"
 zngur = "0.6.0"
+tinytemplate = "1.2.1"
+super-seq-macro = "0.3.8"
+color-eyre = "0.6.4"
+serde = { version = "1.0", features = ["derive"] }

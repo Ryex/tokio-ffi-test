@@ -1,0 +1,25 @@
+mod ::std \{
+  mod option \{
+    type ::std::option::Option<{ty}> \{
+      #layout(size = {size}, align = {align});
+      {{ if is_copy}}
+      wellknown_traits(Copy);
+      {{ endif }}
+      
+      constructor None;
+      constructor Some({ty});
+
+      fn is_some(&self) -> bool;
+      fn is_none(&self) -> bool;
+      fn as_ref(&self) -> Option<&{ty}>;
+      fn as_mut(&mut self) -> Option<&mut {ty}>
+      fn as_slice(&self) -> &[{ty}]
+      fn as_mut_slice(&mut self) -> &mut [{ty}]
+      fn unwrap(self) -> {ty};
+      fn unwrap_or(self, default: {ty}) -> {ty}
+      {{ if is_default }}
+      fn unwrap_or_default(self) -> {ty}
+      {{ endif }}
+    }
+  }
+}

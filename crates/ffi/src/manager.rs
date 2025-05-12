@@ -1,175 +1,25 @@
 use std::{
     collections::{HashMap, HashSet},
-    ffi::OsString,
-    fmt::Display,
-    io,
     sync::{
-        Arc, Mutex,
-        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
+        Arc, Mutex, OnceLock,
+        atomic::{AtomicBool, AtomicI32, AtomicUsize, Ordering},
     },
 };
 
-use thiserror::Error;
 
 use tokio::{
     sync::watch::{Receiver, Sender},
     task::{AbortHandle, JoinHandle},
 };
 
-#[derive(Error, Debug)]
-pub enum FfiError {
-    #[error("error processing request: {0}")]
-    Reqwest(#[from] reqwest::Error),
-    #[error("error creating file '{:?}' : {}", .0.path, .0.error)]
-    CreateFile(IoError),
-    #[error("error writing to file '{:?}' : {}", .0.path, .0.error)]
-    FileWrite(IoError),
-    #[error("Error {}: {}", .0.code, .0.error)]
-    External(ExternalFfiError),
-}
-
-impl FfiError {
-    pub fn as_external(&self) -> Option<&ExternalFfiError> {
-        if let Self::External(external) = &self {
-            Some(external)
-        } else {
-            None
-        }
-    }
-
-    pub fn as_io(&self) -> Option<&IoError> {
-        match &self {
-            Self::CreateFile(err) | Self::FileWrite(err) => Some(err),
-            _ => None,
-        }
-    }
-}
-
-#[derive(Error, Debug)]
-pub struct IoError {
-    pub path: OsString,
-    pub error: io::Error,
-}
-
-impl IoError {
-    pub fn path(&self) -> OsString {
-        self.path.clone()
-    }
-
-    pub fn error(&self) -> String {
-        self.error.to_string()
-    }
-}
-
-impl Display for IoError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.error)
-    }
-}
-
-#[derive(Error, Debug)]
-pub struct ExternalFfiError {
-    code: u32,
-    error: String,
-}
-
-impl ExternalFfiError {
-    pub fn new(code: u32, error: String) -> Self {
-        ExternalFfiError { code, error }
-    }
-
-    pub fn code(&self) -> u32 {
-        self.code
-    }
-}
-
-impl Display for ExternalFfiError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.error)
-    }
-}
-
-#[derive(Error, Debug)]
-pub enum TaskSpawnError {
-    #[error("task already awaited")]
-    TaskAwaited,
-    #[error("task spawn error: {0}")]
-    Error(String),
-}
-
-impl TaskSpawnError {
-    pub fn is_awaited(&self) -> bool {
-        matches!(self, Self::TaskAwaited)
-    }
-}
-
-#[derive(Error, Debug)]
-pub enum TaskError {
-    #[error("task cancelled")]
-    TaskCancelled,
-    #[error("task join error: {0}")]
-    JoinError(#[from] tokio::task::JoinError),
-    #[error("{0}")]
-    SpawnError(#[from] TaskSpawnError),
-    #[error("{0}")]
-    Error(#[from] FfiError),
-}
-
-impl TaskError {
-    pub fn as_task(&self) -> Option<&TaskError> {
-        if matches!(&self, Self::TaskCancelled) {
-            Some(self)
-        } else {
-            None
-        }
-    }
-
-    pub fn as_join(&self) -> Option<&tokio::task::JoinError> {
-        if let Self::JoinError(je) = &self {
-            Some(je)
-        } else {
-            None
-        }
-    }
-
-    pub fn as_spawn(&self) -> Option<&TaskSpawnError> {
-        if let Self::SpawnError(se) = &self {
-            Some(se)
-        } else {
-            None
-        }
-    }
-
-    pub fn as_error(&self) -> Option<&FfiError> {
-        if let Self::Error(err) = &self {
-            Some(err)
-        } else {
-            None
-        }
-    }
-}
-
-#[derive(Debug, Default, Copy, Clone)]
-pub struct TaskProgress {
-    progress: u64,
-    maximum: u64,
-}
-
-impl TaskProgress {
-    pub fn progress(&self) -> u64 {
-        self.progress
-    }
-    pub fn maximum(&self) -> u64 {
-        self.maximum
-    }
-}
+use crate::{error::{SpawnError, TaskError}, task::TaskId};
 
 #[derive(Debug, Clone)]
 pub struct TaskMetadata {
-    id: tokio::task::Id,
+    id: TaskId,
     abort_handle: tokio::task::AbortHandle,
     #[allow(dead_code)]
-    progress: Option<Receiver<TaskProgress>>,
+    progress: Option<Receiver<i32>>,
     name: Option<String>,
     tags: HashSet<String>,
     #[allow(dead_code)]
@@ -177,7 +27,7 @@ pub struct TaskMetadata {
 }
 
 impl TaskMetadata {
-    pub fn id(&self) -> tokio::task::Id {
+    pub fn id(&self) -> TaskId {
         self.id
     }
 
@@ -202,7 +52,7 @@ impl TaskMetadata {
 pub struct TaskSpawnOptions {
     name: Option<String>,
     tags: HashSet<String>,
-    progress: Option<Receiver<TaskProgress>>,
+    progress: Option<Receiver<i32>>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -239,87 +89,80 @@ impl TaskOptions {
 
 #[derive(Debug, Default)]
 pub struct TaskContext {
-    progress: AtomicU64,
-    progress_maximum: AtomicU64,
-    progress_sender: Option<Sender<TaskProgress>>,
+    progress: AtomicI32,
+    progress_sender: Option<Sender<i32>>,
     cancel: AtomicBool,
 }
 
 impl TaskContext {
     pub fn new() -> Arc<Self> {
         Arc::new(TaskContext {
-            progress: AtomicU64::new(0),
-            progress_maximum: AtomicU64::new(0),
+            progress: AtomicI32::new(0),
             progress_sender: None,
             cancel: AtomicBool::new(false),
         })
     }
 
-    pub fn with_progress(sender: Sender<TaskProgress>) -> Arc<Self> {
+    pub fn with_progress(sender: Sender<i32>) -> Arc<Self> {
         Arc::new(TaskContext {
-            progress: AtomicU64::new(0),
-            progress_maximum: AtomicU64::new(0),
+            progress: AtomicI32::new(0),
             progress_sender: Some(sender),
             cancel: AtomicBool::new(false),
         })
     }
 
-    fn send_update(&self) {
+    /// send current progress on the `::tokio::task::watch` channel
+    /// if it exists
+    pub fn send_update(&self) {
         if let Some(progress) = &self.progress_sender {
-            let _ = progress.send(TaskProgress {
-                progress: self.progress(),
-                maximum: self.progress_maximum(),
-            });
+            let _ = progress.send(self.progress());
         }
     }
 
-    pub fn progress(&self) -> u64 {
+    /// get current progress
+    pub fn progress(&self) -> i32 {
         self.progress.load(std::sync::atomic::Ordering::SeqCst)
     }
 
-    pub fn set_progress(&self, value: u64) {
+    /// set progress to value and send and update
+    pub fn set_progress(&self, value: i32) {
         self.progress.store(value, Ordering::SeqCst);
         self.send_update();
     }
 
-    pub fn update(&self, value: u64) {
+    /// add value to current progress and send an update
+    pub fn update(&self, value: i32) {
         self.progress.fetch_add(value, Ordering::SeqCst);
         self.send_update();
     }
 
-    pub fn progress_maximum(&self) -> u64 {
-        self.progress_maximum.load(Ordering::SeqCst)
-    }
-
-    pub fn set_progress_maximum(&self, max: u64) {
-        self.progress_maximum.store(max, Ordering::SeqCst);
-    }
-
+    /// has the cancel flag been set
     pub fn is_cancelled(&self) -> bool {
         self.cancel.load(Ordering::SeqCst)
     }
 
+    /// set the cancel flag
     pub fn cancel(&self) {
         self.cancel.store(true, Ordering::SeqCst);
     }
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct TaskListing(Arc<Mutex<HashMap<tokio::task::Id, Arc<TaskMetadata>>>>);
+pub struct TaskListing(Arc<Mutex<HashMap<TaskId, Arc<TaskMetadata>>>>);
 
 impl TaskListing {
     pub fn new() -> Self {
         TaskListing::default()
     }
 
-    pub fn insert(&self, id: tokio::task::Id, metadata: TaskMetadata) {
+    pub fn insert(&self, id: TaskId, metadata: TaskMetadata) {
         self.0
             .lock()
             .expect("tasks listing lock poisoned")
             .insert(id, Arc::new(metadata));
     }
 
-    pub fn remove(&self, id: tokio::task::Id) {
+    pub fn remove(&self, id: TaskId) {
         self.0
             .lock()
             .expect("tasks listing lock poisoned")
@@ -448,40 +291,15 @@ impl TaskManager {
         self.tasks.insert(meta.id, meta);
         task
     }
+}
 
-    pub fn new_task<T, F, R>(&self, f: F, options: Option<TaskOptions>) -> Box<Task<T>>
-    where
-        T: Send + 'static,
-        F: FnOnce() -> R,
-        R: Future<Output = Result<T, TaskError>> + Send + 'static,
-    {
-        Task::new(self, f, options)
-    }
-
-    pub fn new_blocking<T, F>(&self, f: F, options: Option<TaskOptions>) -> Box<Task<T>>
-    where
-        T: Send + 'static,
-        F: FnOnce() -> Result<T, TaskError> + Send + 'static,
-    {
-        Task::blocking(self, f, options)
-    }
-
-    pub fn new_task_with_ctx<T, F, R>(&self, f: F, options: Option<TaskOptions>) -> Box<Task<T>>
-    where
-        T: Send + 'static,
-        F: FnOnce(&TaskContext) -> R,
-        R: Future<Output = Result<T, TaskError>> + Send + 'static,
-    {
-        Task::with_ctx(self, f, options)
-    }
-
-    pub fn new_blocking_with_ctx<T, F>(&self, f: F, options: Option<TaskOptions>) -> Box<Task<T>>
-    where
-        T: Send + 'static,
-        F: FnOnce(&TaskContext) -> Result<T, TaskError> + Send + 'static,
-    {
-        Task::blocking_with_progress(self, f, options)
-    }
+static TASK_MANAGER: OnceLock<Mutex<TaskManager>> = OnceLock::new();
+fn task_manager() -> TaskManager {
+    TASK_MANAGER
+        .get_or_init(|| Mutex::new(TaskManager::default()))
+        .lock()
+        .expect("TaskManager lock poisoned")
+        .clone()
 }
 
 impl TaskSpawnOptions {
@@ -543,7 +361,7 @@ impl<T: Send + 'static> TaskHandle<T> {
 }
 
 pub struct Task<T: Send + 'static> {
-    id: tokio::task::Id,
+    id: TaskId,
     manager: TaskManager,
     handle: Mutex<Option<TaskHandle<Result<T, TaskError>>>>,
     ctx: Option<Arc<TaskContext>>,
@@ -551,11 +369,12 @@ pub struct Task<T: Send + 'static> {
 }
 
 impl<T: Send + 'static> Task<T> {
-    pub fn new<F, R>(manager: &TaskManager, f: F, options: Option<TaskOptions>) -> Box<Self>
+    pub fn new<F, R>(f: F, options: Option<TaskOptions>) -> Box<Self>
     where
         F: FnOnce() -> R,
         R: Future<Output = Result<T, TaskError>> + Send + 'static,
     {
+        let manager = task_manager();
         let task = manager.spawn(f(), None, options.map(TaskOptions::to_spawn_options));
         Box::new(Task {
             id: task.id(),
@@ -566,10 +385,11 @@ impl<T: Send + 'static> Task<T> {
         })
     }
 
-    pub fn blocking<F>(manager: &TaskManager, f: F, options: Option<TaskOptions>) -> Box<Self>
+    pub fn blocking<F>(f: F, options: Option<TaskOptions>) -> Box<Self>
     where
         F: FnOnce() -> Result<T, TaskError> + Send + 'static,
     {
+        let manager = task_manager();
         let task = manager.spawn_blocking(f, None, options.map(TaskOptions::to_spawn_options));
         Box::new(Task {
             id: task.id(),
@@ -580,11 +400,12 @@ impl<T: Send + 'static> Task<T> {
         })
     }
 
-    pub fn with_ctx<F, R>(manager: &TaskManager, f: F, options: Option<TaskOptions>) -> Box<Self>
+    pub fn with_ctx<F, R>(f: F, options: Option<TaskOptions>) -> Box<Self>
     where
         F: FnOnce(&TaskContext) -> R,
         R: Future<Output = Result<T, TaskError>> + Send + 'static,
     {
+        let manager = task_manager();
         let (ptx, prx) = tokio::sync::watch::channel(TaskProgress::default());
         let tc = TaskContext::with_progress(ptx);
         let ctx = tc.clone();
@@ -608,13 +429,13 @@ impl<T: Send + 'static> Task<T> {
     }
 
     pub fn blocking_with_progress<F>(
-        manager: &TaskManager,
         f: F,
         options: Option<TaskOptions>,
     ) -> Box<Self>
     where
         F: FnOnce(&TaskContext) -> Result<T, TaskError> + Send + 'static,
     {
+        let manager = task_manager();
         let (ptx, prx) = tokio::sync::watch::channel(TaskProgress::default());
         let tc = TaskContext::with_progress(ptx);
         let ctx = tc.clone();
@@ -686,7 +507,7 @@ impl<T: Send + 'static> Task<T> {
         &self,
         callback: F,
         options: Option<TaskOptions>,
-    ) -> Result<Box<Task<T2>>, TaskSpawnError>
+    ) -> Result<Box<Task<T2>>, SpawnError>
     where
         T2: Send + 'static,
         F: FnOnce(Result<T, TaskError>, &TaskContext) -> Result<T2, TaskError> + Send + 'static,
@@ -700,7 +521,7 @@ impl<T: Send + 'static> Task<T> {
             *handle_lock = Some(continued);
             handle
         };
-        let (ptx, prx) = tokio::sync::watch::channel(TaskProgress::default());
+        let (ptx, prx) = tokio::sync::watch::channel(0);
         let tc = TaskContext::with_progress(ptx);
         let ctx = tc.clone();
         let task = self.manager.spawn(
@@ -751,7 +572,7 @@ impl<T: Send + 'static> Task<T> {
 
     pub fn on_progress<F>(&self, callback: F) -> Option<AbortHandle>
     where
-        F: Fn(&TaskProgress) + Send + 'static,
+        F: Fn(i32) + Send + 'static,
     {
         if let Some(recv) = &self.progress {
             let mut recv = recv.clone();
@@ -766,7 +587,7 @@ impl<T: Send + 'static> Task<T> {
         }
     }
 
-    pub fn id(&self) -> tokio::task::Id {
+    pub fn id(&self) -> TaskId {
         self.id
     }
 }

@@ -2,7 +2,14 @@ use std::{env, io::Write};
 
 use zngur::Zngur;
 
-fn main() {
+mod zng;
+
+
+use color_eyre::eyre::Result;
+
+fn main() -> Result<()> {
+    color_eyre::install()?;
+
     let zng_files = ["std.zng", "ffi.zng", "tokio.zng", "tasks.zng"];
 
     // build::rerun_if_changed("ffi_impls.cpp");
