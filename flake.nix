@@ -1,5 +1,5 @@
 {
-  description = "Prismlauncher libprism Rust bindings";
+  description = "Devenv with QT + Rust bindings";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -24,68 +24,66 @@
       devShells = forAllSystems (system:
         let
           pkgs = nixpkgsFor.${system};
+
+          llvm' = pkgs.llvmPackages_21;
+
           libPath = lib.makeLibraryPath [ ];
+
+          inherit (pkgs.stdenv.hostPlatform) isLinux;
+          inherit (pkgs.qt6Packages) qtbase qtwayland wrapQtAppsHook;
+
+          qt-wrapper-env = pkgs.stdenv.mkDerivation {
+            name = "qt-wrapper-env";
+
+            nativeBuildInputs = [ pkgs.makeWrapper wrapQtAppsHook ];
+
+            buildInputs = [ pkgs.qt6Packages.qtbase ]
+              ++ lib.optional isLinux qtwayland;
+
+            buildCommand = ''
+              makeQtWrapper ${lib.getExe pkgs.runtimeShellPackage} "$out"
+              sed -i '/^exec/d' "$out" 
+            '';
+          };
         in {
           default = pkgs.mkShell {
             name = "tokio-ffi-test";
 
             nativeBuildInputs = with pkgs; [ cmake ninja ];
 
-            buildInputs = with pkgs; [
-              qt6Packages.qtbase
-              zlib
-              # hematite
-              ccache
-              ninja
-              llvmPackages.bintools
-              llvmPackages.clang-tools
-              cargo
-              rustc
-              rust-analyzer
-              rustfmt
-              clippy
-            ];
+            buildInputs = with pkgs;
+              [
+                qtbase
+                zlib
+                # hematite
+                ccache
+                ninja
+                cargo
+                rustc
+                rust-analyzer
+                rustfmt
+                clippy
+                llvm'.clang-tools
+                rustPlatform.bindgenHook
+              ] ++ lib.optional isLinux qtwayland;
 
             LD_LIBRARY_PATH = libPath;
 
-            # # Add glibc, clang, glib, and other headers to bindgen search path
-            BINDGEN_EXTRA_CLANG_ARGS =
-              # Includes normal include path
-              (builtins.map (a: ''-I"${a}/include"'') [
-                # add dev libraries here (e.g. pkgs.libvmi.dev)
-                pkgs.glibc.dev
-              ])
-              # Includes with special directory paths
-              ++ [
-                ''
-                  -I"${pkgs.llvmPackages.libclang.lib}/lib/clang/${pkgs.llvmPackages_19.libclang.version}/include"''
-                ''-I"${pkgs.glib.dev}/include/glib-2.0"''
-                "-I${pkgs.glib.out}/lib/glib-2.0/include/"
-              ];
+            cmakeBuildType = "Debug";
+            cmakeFlags = [ "-GNinja" ];
+            dontFixCmake = true;
 
-            # CPLUS_INCLUDE_PATH = (builtins.map (a: ''"${a}/include"'') [
-            #   # add dev libraries here (e.g. pkgs.libvmi.dev)
-            #   pkgs.glibc.dev
-            # ])
-            # # Includes with special directory paths
-            #   ++ [
-            #     ''
-            #       "${pkgs.llvmPackages.libclang.lib}/lib/clang/${pkgs.llvmPackages.libclang.version}/include"''
-            #     ''"${pkgs.glib.dev}/include/glib-2.0"''
-            #     "${pkgs.glib.out}/lib/glib-2.0/include/"
-            #   ];
-            #
-            # CXXFLAGS = (builtins.map (a: ''-isystem "${a}/include"'') [
-            #   pkgs.stdenv.cc.cc.lib
-            #   pkgs.glibc.dev
-            # ]) ++ [
-            #   # ''
-            #   #   "-isystem ${pkgs.llvmPackages.libclang.lib}/lib/clang/${pkgs.llvmPackages.libclang.version}/include"''
-            #   ''-isystem "${pkgs.glib.dev}/include/glib-2.0"''
-            #   ''-isystem "${pkgs.glib.out}/lib/glib-2.0/include/"''
-            # ];
+            shellHook = ''
+              echo "Sourcing ${qt-wrapper-env}"
+              source ${qt-wrapper-env}
 
-            shellHook = "";
+              if [ ! -f compile_commands.json ]; then
+                cmakeConfigurePhase
+                cd ..
+                ln -s "$cmakeBuildDir"/compile_commands.json compile_commands.json
+              fi
+
+            '';
           };
         });
     };

@@ -30,6 +30,11 @@ corrosion_import_crate(MANIFEST_PATH crates/Cargo.toml
 )
 message("-- Found crates: ${imported_crates}")
 
+if(CMAKE_EXPORT_COMPILE_COMMANDS)
+  set(CMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES 
+      ${CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES})
+endif()
+
 target_sources(tokio_ffi_test
   PUBLIC
   FILE_SET HEADERS
