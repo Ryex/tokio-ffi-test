@@ -19,8 +19,6 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
 
     parser.process(arguments());
 
-    showMainWindow();
-    setUpTasks();
 }
 
 void Application::showMainWindow()
@@ -28,7 +26,7 @@ void Application::showMainWindow()
     if (m_mainWindow) {
         m_mainWindow->raise();
     } else {
-        m_mainWindow = new MainWindow();
+        m_mainWindow = new MainWindow(nullptr);
         m_mainWindow->show();
     }
 }

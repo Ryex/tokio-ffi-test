@@ -1,3 +1,4 @@
 crates/.cache/clangd/index
 crates/target
 crates/compile_commands.json
+crates/ffi/include/tasks-ffi/generated.h

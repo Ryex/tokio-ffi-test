@@ -8,6 +8,7 @@ return {
 		"AstroNvim/astrocommunity",
 		{ import = "astrocommunity.pack.rust" },
 		{ import = "astrocommunity.pack.cpp" },
+		{ import = "astrocommunity.pack.toml" },
 	},
 	{
 		"WhoIsSethDaniel/mason-tool-installer.nvim",

@@ -11,7 +11,7 @@
 
   };
 
-  outputs = { self, nixpkgs, libnbtplusplus,
+  outputs = { self, nixpkgs,
     # nix-filter, 
     ... }:
     let
@@ -29,13 +29,10 @@
           default = pkgs.mkShell {
             name = "tokio-ffi-test";
 
-            nativeBuildInputs = with pkgs; [
-              cmake
-              ninja
-            ];
+            nativeBuildInputs = with pkgs; [ cmake ninja ];
 
             buildInputs = with pkgs; [
-              kdePackages.qtbase
+              qt6Packages.qtbase
               zlib
               # hematite
               ccache
@@ -66,17 +63,27 @@
                 "-I${pkgs.glib.out}/lib/glib-2.0/include/"
               ];
 
-            CPLUS_INCLUDE_PATH = (builtins.map (a: ''"${a}/include"'') [
-              # add dev libraries here (e.g. pkgs.libvmi.dev)
-              pkgs.glibc.dev
-            ])
-            # Includes with special directory paths
-              ++ [
-                ''
-                  "${pkgs.llvmPackages.libclang.lib}/lib/clang/${pkgs.llvmPackages.libclang.version}/include"''
-                ''"${pkgs.glib.dev}/include/glib-2.0"''
-                "${pkgs.glib.out}/lib/glib-2.0/include/"
-              ];
+            # CPLUS_INCLUDE_PATH = (builtins.map (a: ''"${a}/include"'') [
+            #   # add dev libraries here (e.g. pkgs.libvmi.dev)
+            #   pkgs.glibc.dev
+            # ])
+            # # Includes with special directory paths
+            #   ++ [
+            #     ''
+            #       "${pkgs.llvmPackages.libclang.lib}/lib/clang/${pkgs.llvmPackages.libclang.version}/include"''
+            #     ''"${pkgs.glib.dev}/include/glib-2.0"''
+            #     "${pkgs.glib.out}/lib/glib-2.0/include/"
+            #   ];
+            #
+            # CXXFLAGS = (builtins.map (a: ''-isystem "${a}/include"'') [
+            #   pkgs.stdenv.cc.cc.lib
+            #   pkgs.glibc.dev
+            # ]) ++ [
+            #   # ''
+            #   #   "-isystem ${pkgs.llvmPackages.libclang.lib}/lib/clang/${pkgs.llvmPackages.libclang.version}/include"''
+            #   ''-isystem "${pkgs.glib.dev}/include/glib-2.0"''
+            #   ''-isystem "${pkgs.glib.out}/lib/glib-2.0/include/"''
+            # ];
 
             shellHook = "";
           };
