@@ -9,8 +9,8 @@ fn main() {
 
     let cxx = env::var("CXX").unwrap_or("c++".to_owned());
 
-    let crate_dir = build::cargo_manifest_dir();
-    let out_dir = build::out_dir();
+    let crate_dir = build_rs::input::cargo_manifest_dir();
+    let out_dir = build_rs::input::out_dir();
 
     let zng_dir = crate_dir.join("zng");
 
@@ -21,7 +21,7 @@ fn main() {
 
         for f in zng_files {
             let path = zng_dir.join(f);
-            build::rerun_if_changed(&path);
+            build_rs::output::rerun_if_changed(&path);
 
             let file = std::fs::File::open(&path)
                 .unwrap_or_else(|err| panic!("Can not open {path:?}: {err}"));
@@ -56,11 +56,10 @@ fn main() {
 
     let generated_cpp = out_dir.join("generated.cpp");
     let generated_h = out_dir.join("generated.h");
-    let target_h = 
-        crate_dir
-            .join("include")
-            .join("tasks-ffi")
-            .join("generated.h");
+    let target_h = crate_dir
+        .join("include")
+        .join("tasks-ffi")
+        .join("generated.h");
 
     Zngur::from_zng_file(&main_zng_path)
         .with_cpp_file(&generated_cpp)
@@ -70,11 +69,8 @@ fn main() {
 
     println!("copying {generated_h:?} to {target_h:?}");
 
-    std::fs::copy(
-        &generated_h,
-        &target_h
-    )
-    .unwrap_or_else(|err| panic!("error copying generated header: {err}"));
+    std::fs::copy(&generated_h, &target_h)
+        .unwrap_or_else(|err| panic!("error copying generated header: {err}"));
 
     let build = &mut cc::Build::new();
     let build = build
@@ -89,7 +85,7 @@ fn main() {
 
     let headers = ["include/tasks-ffi/tasks.hpp", "include/tasks-ffi/types.hpp"];
     for header in &headers {
-        build::rerun_if_changed(header);
+        build_rs::output::rerun_if_changed(header);
     }
 
     let sources: Vec<&str> = vec!["src/tasks.cpp"];
@@ -102,7 +98,7 @@ fn main() {
     }
 
     for src in &sources {
-        build::rerun_if_changed(src);
+        build_rs::output::rerun_if_changed(src);
     }
 
     tasksffi.compile("tasksffi")

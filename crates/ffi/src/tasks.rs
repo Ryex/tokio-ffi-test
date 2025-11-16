@@ -218,22 +218,48 @@ impl TaskOptions {
     pub fn name(&self) -> Option<&String> {
         self.name.as_ref()
     }
+
     pub fn set_name(&mut self, name: Option<String>) -> &mut Self {
         self.name = name;
         self
     }
+
     pub fn tags(&self) -> &HashSet<String> {
         &self.tags
     }
+
     pub fn tags_mut(&mut self) -> &mut HashSet<String> {
         &mut self.tags
     }
+
     pub fn to_spawn_options(self) -> TaskSpawnOptions {
         TaskSpawnOptions {
             name: self.name,
             tags: self.tags,
             progress: None,
         }
+    }
+
+    pub fn with_name(mut self, name: String) -> Self {
+        self.name = Some(name);
+        self
+    }
+
+    pub fn with_tags<T, S>(mut self, tags: T )     -> Self 
+    where
+        T: IntoIterator<Item = S>,
+        S: AsRef<str>,
+
+    {
+        self.tags
+            .extend(tags.into_iter().map(|tag| tag.as_ref().to_owned()));
+        self
+    }
+}
+
+impl From<TaskOptions> for TaskSpawnOptions {
+    fn from(value: TaskOptions) -> Self {
+        value.to_spawn_options()
     }
 }
 
@@ -498,9 +524,10 @@ impl TaskSpawnOptions {
         self
     }
 
-    pub fn with_tags(mut self, tags: impl IntoIterator<Item = String>) -> Self {
+    pub fn with_tags(mut self, tags: impl IntoIterator<Item = impl AsRef<str>>) -> Self {
         self.tags.clear();
-        self.tags.extend(tags);
+        self.tags
+            .extend(tags.into_iter().map(|tag| tag.as_ref().to_owned()));
         self
     }
 

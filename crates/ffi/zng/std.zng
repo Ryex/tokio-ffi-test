@@ -13,8 +13,13 @@ type bool {
 }
 
 mod ::std {
+
+    use ::std::string::String as String;
+    use ::std::vec::Vec as Vec;
+    use ::std::option::Option as Option ;
+
     mod option {
-        type ::std::option::Option<&u64> {
+        type Option<&u64> {
             #layout(size = 8, align = 8);
             wellknown_traits(Debug, Copy);
             
@@ -23,7 +28,7 @@ mod ::std {
 
             fn unwrap(self) -> &u64;
         }
-        type ::std::option::Option<&u16> {
+        type Option<&u16> {
             #layout(size = 8, align = 8);
             wellknown_traits(Debug, Copy);
             
@@ -32,7 +37,7 @@ mod ::std {
 
             fn unwrap(self) -> &u16;
         }
-        type ::std::option::Option<&u8> {
+        type Option<&u8> {
             #layout(size = 8, align = 8);
             wellknown_traits(Debug, Copy);
             
@@ -41,7 +46,8 @@ mod ::std {
 
             fn unwrap(self) -> &u8;
         }
-        type ::std::option::Option<usize> {
+
+        type Option<usize> {
             #layout(size = 16, align = 8);
             wellknown_traits(Debug, Copy);
             
@@ -49,6 +55,16 @@ mod ::std {
             constructor Some(usize);
 
             fn unwrap(self) -> usize;
+        }
+
+        type Option<&str> {
+            #layout(size = 16, align = 8);
+            wellknown_traits(Debug, Copy);
+            
+            constructor None;
+            constructor Some(&str);
+
+            fn unwrap(self) -> &str;
         }
 
     }
@@ -60,7 +76,7 @@ mod ::std {
             fn new() -> Vec<u64>;
             fn clone(&self) -> Vec<u64>;
             fn push(&mut self, u64);
-            fn get(&self, usize) -> ::std::option::Option<&u64> deref [u64];
+            fn get(&self, usize) -> Option<&u64> deref [u64];
             fn extend_from_slice(&mut self, &[u64]);
         }
 
@@ -70,7 +86,7 @@ mod ::std {
             fn new() -> Vec<u16>;
             fn clone(&self) -> Vec<u16>;
             fn push(&mut self, u16);
-            fn get(&self, usize) -> ::std::option::Option<&u16> deref [u16];
+            fn get(&self, usize) -> Option<&u16> deref [u16];
             fn extend_from_slice(&mut self, &[u16]);
         }
 
@@ -80,8 +96,27 @@ mod ::std {
             fn new() -> Vec<u8>;
             fn clone(&self) -> Vec<u8>;
             fn push(&mut self, u8);
-            fn get(&self, usize) -> ::std::option::Option<&u8> deref [u8];
+            fn get(&self, usize) -> Option<&u8> deref [u8];
             fn extend_from_slice(&mut self, &[u8]);
+        }
+
+        type Vec<&str> {
+            #layout(size = 24, align = 8);
+            
+            fn new() -> Vec<&str>;
+            fn clone(&self) -> Vec<&str>;
+            fn push(&mut self, &str);
+            fn extend_from_slice(&mut self, &[&str]);
+        }
+
+        type Vec<String> {
+            #layout(size = 24, align = 8);
+            
+            fn new() -> Vec<String>;
+            fn clone(&self) -> Vec<String>;
+            fn push(&mut self, String);
+            fn get(&self, usize) -> Option<&String> deref [String];
+            fn extend_from_slice(&mut self, &[String]);
         }
     }
    
@@ -112,6 +147,22 @@ type [u8] {
     fn len(&self) -> usize;
     fn get(&self, usize) -> ::std::option::Option<&u8>;
     fn to_vec(&self) -> ::std::vec::Vec<u8>;
+}
+
+
+type [&str] {
+    wellknown_traits(?Sized);
+
+    fn len(&self) -> usize;
+    fn to_vec(&self) -> ::std::vec::Vec<&str>;
+}
+
+type [::std::string::String] {
+    wellknown_traits(?Sized);
+
+    fn len(&self) -> usize;
+    fn get(&self, usize) -> ::std::option::Option<&::std::string::String>;
+    fn to_vec(&self) -> ::std::vec::Vec<::std::string::String>;
 }
 
 mod ::std::slice {
@@ -165,9 +216,16 @@ mod std {
     mod result {
         type Result<::std::string::String, ::std::string::FromUtf8Error> {
             #layout(size = 40, align = 8);
+            fn expect(self, &str) -> ::std::string::String;
         }
         type Result<::std::string::String, ::std::string::FromUtf16Error> {
             #layout(size = 24, align = 8);
+            fn expect(self, &str) -> ::std::string::String;
+        }
+        type Result<&str, ::std::str::Utf8Error> {
+            #layout(size = 24, align = 8);
+
+            fn expect(self, &str) -> &str;
         }
     }
 }
@@ -229,6 +287,13 @@ mod ::std {
             fn to_string_lossy(&self) -> ::std::borrow::Cow<str>;
             fn to_os_string(&self) -> OsString;
             fn as_encoded_bytes(&self) -> &[u8];
+        }
+
+        type CStr {
+            wellknown_traits(?Sized);
+
+            fn from_ptr(*const i8) -> &::std::ffi::CStr;
+            fn to_str(&self) -> ::std::result::Result<&str, ::std::str::Utf8Error>;
         }
     }
 

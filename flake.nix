@@ -45,6 +45,10 @@
               sed -i '/^exec/d' "$out" 
             '';
           };
+
+          qt-plugin-path = (lib.strings.concatStringsSep ":"
+            (builtins.map (p: "${p}/lib/qt-6/plugins")
+              ([ qtbase ] ++ lib.optional isLinux qtwayland)));
         in {
           default = pkgs.mkShell {
             name = "tokio-ffi-test";
@@ -76,6 +80,9 @@
             shellHook = ''
               echo "Sourcing ${qt-wrapper-env}"
               source ${qt-wrapper-env}
+
+              echo "Patching QT_PLUGIN_PATH"
+              export QT_PLUGIN_PATH="${qt-plugin-path}:$QT_PLUGIN_PATH"
 
               if [ ! -f compile_commands.json ]; then
                 cmakeConfigurePhase

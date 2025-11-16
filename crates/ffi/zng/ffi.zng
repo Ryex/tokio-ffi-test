@@ -2,6 +2,10 @@
 #include <tasks-ffi/types.hpp>
 "
 
+use ::std::string::String as String;
+use ::std::vec::Vec as Vec;
+use ::std::option::Option as Option ;
+
 mod crate::tasks {
 
     type TaskProgress {
@@ -17,28 +21,35 @@ mod crate::tasks {
         #layout(size = 112, align = 8);
 
         fn id(&self) -> ::tokio::task::Id;
-        fn id_display(&self) -> ::std::string::String;
+        fn id_display(&self) -> String;
         fn abort_handle(&self) -> ::tokio::task::AbortHandle;
-        fn name(&self) -> ::std::option::Option<&::std::string::String>;
-        fn tags(&self) -> &::std::collections::HashSet<::std::string::String>;
+        fn name(&self) -> Option<&String>;
+        fn tags(&self) -> &::std::collections::HashSet<String>;
     }
 
     type TaskOptions {
         #layout(size = 72, align = 8);
 
+        constructor();
+
         fn new() -> crate::tasks::TaskOptions;
         fn clone(&self) -> crate::tasks::TaskOptions;
         
-        fn name(&self) -> ::std::option::Option<&::std::string::String>;
+        fn name(&self) -> Option<&String>;
         fn set_name(
             &mut self,
-            ::std::option::Option<::std::string::String>
+            Option<String>
         ) -> &mut crate::tasks::TaskOptions;
         
-        fn tags(&self) -> &::std::collections::HashSet<::std::string::String>;
+        fn tags(&self) -> &::std::collections::HashSet<String>;
         fn tags_mut(
             &mut self
-        ) -> &mut ::std::collections::HashSet<::std::string::String>;
+        ) -> &mut ::std::collections::HashSet<String>;
+
+        fn with_name(self, String) -> crate::tasks::TaskOptions;
+        
+        fn with_tags<Vec<&str>, &str>(self, Vec<&str>) -> crate::tasks::TaskOptions;
+        fn with_tags<Vec<String>, String>(self, Vec<String>) -> crate::tasks::TaskOptions;
     }
 
     type TaskContext {

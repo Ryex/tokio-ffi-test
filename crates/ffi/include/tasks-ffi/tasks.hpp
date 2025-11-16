@@ -61,6 +61,11 @@ using ExternalFfiError = rust::crate::tasks::ExternalFfiError;
 using FfiAbortHandle = rust::tokio::task::AbortHandle;
 using TokioId = rust::tokio::task::Id;
 
+inline rust::Ref<rust::Str> rust_str_from_c_str(const char* input)
+{
+    return rust::std::ffi::CStr::from_ptr(reinterpret_cast<const int8_t*>(input)).to_str().expect("invalid_utf8"_rs);
+}
+
 struct task_spawn_error : public std::runtime_error {
    public:
     task_spawn_error(TaskSpawnError&& err);
@@ -108,6 +113,12 @@ class Task {
     bool is_finished() const;
     bool is_cancelled() const;
     void cancel();
+
+// #if __cplusplus >= 202002L
+//     // C++20 coroutines
+//    public:
+//     bool await_ready() { return m_task.as_ref().is_finished(); }
+// #endif  // __cplusplus >= 202002L
 };
 
 template <typename T>
@@ -163,13 +174,13 @@ inline Option<RustTaskOptions> transform_options_ffi(std::optional<task::TaskOpt
     Option<RustTaskOptions> rust_opts = Option<RustTaskOptions>::None();
     if (options.has_value()) {
         auto opts = options.value();
-        auto ropts = RustTaskOptions::new_();
+        auto ropts = RustTaskOptions();
         if (opts.name.has_value()) {
-            ropts.set_name(Option<String>::Some(Str::from_char_star(opts.name.value().c_str()).to_owned()));
+            ropts.set_name(Option<String>::Some(rust_str_from_c_str(opts.name.value().c_str()).to_owned()));
         }
         auto tags = ropts.tags_mut();
         for (auto& tag : opts.tags) {
-            tags.insert(Str::from_char_star(tag.c_str()).to_owned());
+            tags.insert(rust_str_from_c_str(tag.c_str()).to_owned());
         }
     }
     return rust_opts;
@@ -183,7 +194,7 @@ inline Result<RustCxxAny, TaskError> trycatch_any(Try&& func, Args&&... args)
             RustCxxAny(rust::ZngurCppOpaqueOwnedObject::build<task::ffi::CxxAny>(func(std::forward<Args>(args)...))));
     } catch (const ::std::exception& e) {
         return Result<RustCxxAny, TaskError>::Err(
-            TaskError::Error(FfiError::External(ExternalFfiError::new_(2, rust::Str::from_char_star(e.what()).to_string()))));
+            TaskError::Error(FfiError::External(ExternalFfiError::new_(2, rust_str_from_c_str(e.what()).to_string()))));
     }
 }
 
@@ -195,7 +206,7 @@ inline Result<Unit, TaskError> trycatch_unit(Try&& func, Args&&... args)
         return Result<Unit, TaskError>::Ok(Unit());
     } catch (const ::std::exception& e) {
         return Result<Unit, TaskError>::Err(
-            TaskError::Error(FfiError::External(ExternalFfiError::new_(2, rust::Str::from_char_star(e.what()).to_string()))));
+            TaskError::Error(FfiError::External(ExternalFfiError::new_(2, rust_str_from_c_str(e.what()).to_string()))));
     }
 }
 
