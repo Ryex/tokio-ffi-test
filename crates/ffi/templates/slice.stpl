@@ -1,0 +1,22 @@
+type [<%- self.ty %>] {
+    wellknown_traits(?Sized);
+
+    <% if self.pointer_access { %>
+    fn as_ptr(&self) -> *const <%- self.ty %>;
+    <% } %>
+    fn len(&self) -> usize;
+    <% if self.get_access { %>
+    fn get(&self, usize) -> ::std::option::Option<&<%- self.ty %> >;
+    <% } %>
+}
+
+type ::std::option::Option<& <%- self.ty %> > {
+    #layout(size = 8, align = 8);
+    wellknown_traits(Debug, Copy);
+    
+    constructor None;
+    constructor Some(&<%- self.ty %>);
+
+    fn unwrap(self) -> &<%- self.ty %>;
+    fn expect(self, &str) -> &<%- self.ty %>;
+}

@@ -6,10 +6,11 @@
 #include <QPromise>
 #include <QPushButton>
 #include <memory>
+
 #include "tasks-ffi/tasks.hpp"
 
-#include <thread>
 #include <chrono>
+#include <thread>
 
 Application::Application(int& argc, char** argv) : QApplication(argc, argv)
 {
@@ -18,7 +19,6 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
     parser.addVersionOption();
 
     parser.process(arguments());
-
 }
 
 void Application::showMainWindow()
@@ -66,7 +66,7 @@ void Application::setUpTasks()
             ctx.set_progress(n);
 
             return nextTerm;
-        });
+        }, task::TaskOptions());
         m_mainWindow->setLabel("Working ...");
         promise->start();
         auto t = task.then(

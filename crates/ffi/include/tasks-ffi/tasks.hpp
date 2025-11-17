@@ -114,11 +114,6 @@ class Task {
     bool is_cancelled() const;
     void cancel();
 
-// #if __cplusplus >= 202002L
-//     // C++20 coroutines
-//    public:
-//     bool await_ready() { return m_task.as_ref().is_finished(); }
-// #endif  // __cplusplus >= 202002L
 };
 
 template <typename T>
@@ -174,7 +169,7 @@ inline Option<RustTaskOptions> transform_options_ffi(std::optional<task::TaskOpt
     Option<RustTaskOptions> rust_opts = Option<RustTaskOptions>::None();
     if (options.has_value()) {
         auto opts = options.value();
-        auto ropts = RustTaskOptions();
+        auto ropts = RustTaskOptions::new_();
         if (opts.name.has_value()) {
             ropts.set_name(Option<String>::Some(rust_str_from_c_str(opts.name.value().c_str()).to_owned()));
         }

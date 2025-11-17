@@ -30,8 +30,6 @@ mod crate::tasks {
     type TaskOptions {
         #layout(size = 72, align = 8);
 
-        constructor();
-
         fn new() -> crate::tasks::TaskOptions;
         fn clone(&self) -> crate::tasks::TaskOptions;
         

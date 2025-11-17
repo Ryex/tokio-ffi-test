@@ -37,3 +37,7 @@ futures-util = {version ="0.3.31", features = ["channel"]}
 cc = "1.0"
 build-rs = "0.3.2"
 zngur = "0.7.0"
+zngur-def = "0.7.0"
+zngur-parser = "0.7.0"
+sailfish = "0.10.0"
+walkdir = "2.5.0"

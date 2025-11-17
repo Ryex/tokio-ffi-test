@@ -71,7 +71,6 @@ type Box<
 }
 
 
-
 type Box<
     dyn Fn(
         ::std::result::Result<crate::ffi::CxxAny, crate::tasks::TaskError>
