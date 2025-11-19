@@ -94,9 +94,9 @@ bool Task<void>::is_finished() const
     return m_task.as_ref().is_finished();
 }
 
-bool Task<void>::is_cancelled() const
+bool Task<void>::is_canceled() const
 {
-    return m_task.as_ref().is_cancelled();
+    return m_task.as_ref().is_canceled();
 }
 
 void Task<void>::cancel()

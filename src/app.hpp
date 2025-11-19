@@ -6,6 +6,7 @@
 
 #include "window.hpp"
 #include "task-ffi/task.hpp"
+#include "TaskWatcher.hpp"
 
 class Application : public QApplication {
     Q_OBJECT
@@ -19,5 +20,6 @@ class Application : public QApplication {
     QPointer<MainWindow> m_mainWindow = nullptr;
     task::TaskManager m_taskManager;
 
-    QFutureWatcher<std::int64_t> m_futureWatcher;
+    TaskWatcher<std::int64_t> m_taskWatcher;
+
 };

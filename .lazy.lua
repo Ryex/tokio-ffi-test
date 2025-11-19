@@ -18,6 +18,7 @@ return {
 		{ import = "astrocommunity.pack.rust" },
 		{ import = "astrocommunity.pack.cpp" },
 		{ import = "astrocommunity.pack.toml" },
+		{ import = "astrocommunity.pack.cmake" },
 	},
 	{
 		"WhoIsSethDaniel/mason-tool-installer.nvim",

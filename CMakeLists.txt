@@ -8,7 +8,7 @@ set(CMAKE_AUTOUIC ON)
 
 set(CMAKE_CXX_STANDARD_REQUIRED true)
 set(CMAKE_C_STANDARD_REQUIRED true)
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_C_STANDARD 11)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -25,8 +25,11 @@ FetchContent_MakeAvailable(Corrosion)
 
 find_package(Qt6 REQUIRED COMPONENTS Core CoreTools Widgets Concurrent)
 
+# importing "tokio-ffi-test" will create the target as "tokio_ffi_test"
 corrosion_import_crate(MANIFEST_PATH crates/Cargo.toml
   IMPORTED_CRATES imported_crates
+  CRATES tokio-ffi-test
+  FEATURES
 )
 message("-- Found crates: ${imported_crates}")
 
@@ -35,23 +38,20 @@ if(CMAKE_EXPORT_COMPILE_COMMANDS)
       ${CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES})
 endif()
 
+# fix crate target to attach it's includes
 target_sources(tokio_ffi_test
   PUBLIC
   FILE_SET HEADERS
   BASE_DIRS crates/ffi/include
-  FILES
-  crates/ffi/include/task-ffi/generated.h
-  crates/ffi/include/task-ffi/types.hpp
-  crates/ffi/include/task-ffi/task.hpp
 )
-  
 
 set(SOURCES
   src/app.cpp
   src/app.hpp
   src/window.cpp
   src/window.hpp
-  # src/main.ui
+  src/TaskWatcher.hpp
+  src/TaskWatcher.cpp
 )
 
 add_library(ffitest_core STATIC ${SOURCES})
@@ -64,5 +64,5 @@ target_link_libraries(ffitest_core
   Qt6::Widgets
 )
 
-add_executable(tokio-ffi-test MACOSX_BUNDLE WIN32 src/main.cpp)
-target_link_libraries(tokio-ffi-test ffitest_core)
+add_executable(tokio-ffi MACOSX_BUNDLE WIN32 src/main.cpp)
+target_link_libraries(tokio-ffi ffitest_core)

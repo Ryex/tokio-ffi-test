@@ -191,7 +191,7 @@ mod crate::task {
         constructor Error(FfiError);
 
         fn to_string(&self) -> String;
-        fn as_task_cancelled(&self) -> Option<&TaskError>;
+        fn as_task_canceled(&self) -> Option<&TaskError>;
         fn as_join_error(&self) -> Option<& ::tokio::task::JoinError>;
         fn as_spawn_error(&self) -> Option<&TaskSpawnError>;
         fn as_error(&self) -> Option<&FfiError>;
@@ -291,7 +291,7 @@ mod crate::task {
         fn id(&self) -> TaskId;
         fn manager(&self) -> &TaskManager;
         fn is_finished(&self) -> bool;
-        fn is_cancelled(&self) -> bool;
+        fn is_canceled(&self) -> bool;
         fn cancel(&self);
         fn on_progress(
             &self,
@@ -380,7 +380,7 @@ mod crate::task {
         fn id(&self) -> TaskId;
         fn manager(&self) -> &TaskManager;
         fn is_finished(&self) -> bool;
-        fn is_cancelled(&self) -> bool;
+        fn is_canceled(&self) -> bool;
         fn cancel(&self);
         fn on_progress(
             &self,

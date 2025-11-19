@@ -25,8 +25,8 @@ mod ffi;
 //             File::create(&path).map_err(|err| FfiError::CreateFile(path.clone(), err))?;
 //
 //         while let Some(chunk) = res.chunk().await? {
-//             if ctx.is_cancelled() {
-//                 return Err(FfiError::TaskCancelled);
+//             if ctx.is_canceled() {
+//                 return Err(FfiError::TaskCanceled);
 //             }
 //             file.write_all(&chunk)
 //                 .map_err(|err| FfiError::FileWrite(path.clone(), err))?;
@@ -48,8 +48,8 @@ mod ffi;
 //         let mut buf: Vec<u8> = Vec::new();
 //
 //         while let Some(chunk) = res.chunk().await? {
-//             if ctx.is_cancelled() {
-//                 return Err(FfiError::TaskCancelled);
+//             if ctx.is_canceled() {
+//                 return Err(FfiError::TaskCanceled);
 //             }
 //             buf.extend(&chunk);
 //             ctx.update(chunk.len() as u64);

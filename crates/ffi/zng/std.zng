@@ -121,6 +121,7 @@ mod std {
 
 type (usize, ::std::option::Option<usize>) {
     #layout(size = 24, align = 8);
+    wellknown_traits(Debug);
 
     fn lower(&self) -> usize use crate::ffi::SizeHintExt;
     fn upper(&self) -> ::std::option::Option<usize> use crate::ffi::SizeHintExt;

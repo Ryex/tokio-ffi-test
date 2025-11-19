@@ -235,8 +235,8 @@ impl TaskSpawnError {
 
 #[derive(Error, Debug)]
 pub enum TaskError {
-    #[error("task cancelled")]
-    TaskCancelled,
+    #[error("task canceled")]
+    TaskCanceled,
     #[error("task join error: {0}")]
     JoinError(#[from] tokio::task::JoinError),
     #[error("{0}")]
@@ -246,8 +246,8 @@ pub enum TaskError {
 }
 
 impl TaskError {
-    pub fn as_task_cancelled(&self) -> Option<&TaskError> {
-        if let Self::TaskCancelled = &self {
+    pub fn as_task_canceled(&self) -> Option<&TaskError> {
+        if let Self::TaskCanceled = &self {
             Some(self)
         } else {
             None
@@ -450,7 +450,7 @@ impl TaskContext {
         self.progress_maximum.store(max, Ordering::SeqCst);
     }
 
-    pub fn is_cancelled(&self) -> bool {
+    pub fn is_canceled(&self) -> bool {
         self.cancel.load(Ordering::SeqCst)
     }
 
@@ -984,8 +984,8 @@ impl<T: Send + 'static> Task<T> {
         self.ctx.cancel();
     }
 
-    pub fn is_cancelled(&self) -> bool {
-        self.ctx.is_cancelled()
+    pub fn is_canceled(&self) -> bool {
+        self.ctx.is_canceled()
     }
 
     pub fn on_progress<F>(&self, callback: F) -> Option<AbortHandle>

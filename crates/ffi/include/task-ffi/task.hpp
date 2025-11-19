@@ -189,8 +189,8 @@ class Task {
 
    public:
     TaskId id() const;
-    bool is_finished() const;
-    bool is_cancelled() const;
+    bool isFinished() const;
+    bool isCanceled() const;
     void cancel();
 };
 
@@ -224,7 +224,7 @@ class Task<void> {
    public:
     TaskId id() const;
     bool is_finished() const;
-    bool is_cancelled() const;
+    bool is_canceled() const;
     void cancel();
 };
 
@@ -447,15 +447,15 @@ TaskId Task<T>::id() const
 }
 
 template <typename T>
-bool Task<T>::is_finished() const
+bool Task<T>::isFinished() const
 {
     return m_task.as_ref().is_finished();
 }
 
 template <typename T>
-bool Task<T>::is_cancelled() const
+bool Task<T>::isCanceled() const
 {
-    return m_task.as_ref().is_cancelled();
+    return m_task.as_ref().is_canceled();
 }
 
 template <typename T>
