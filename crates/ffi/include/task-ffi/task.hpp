@@ -8,7 +8,77 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <vector>
+
+namespace rust_util {
+
+namespace str {
+inline rust::Ref<rust::Str> from_c_str(const char* input)
+{
+    return rust::std::ffi::CStr::from_ptr(reinterpret_cast<const int8_t*>(input)).to_str().expect("invalid_utf8"_rs);
+}
+}  // namespace str
+
+namespace string {
+
+template <typename T>
+inline std::string to_string(T);
+
+template <typename T>
+inline std::string_view to_string_view(T);
+
+template <>
+inline std::string to_string(rust::Ref<rust::Str> str)
+{
+    return std::string(reinterpret_cast<const char*>(str.as_ptr()), str.len());
+}
+
+template <>
+inline std::string_view to_string_view(rust::Ref<rust::Str> str)
+{
+    return std::string_view(reinterpret_cast<const char*>(str.as_ptr()), str.len());
+}
+
+template <>
+inline std::string to_string(rust::Ref<rust::std::string::String> str)
+{
+    return std::string(reinterpret_cast<const char*>(str.as_str().as_ptr()), str.len());
+}
+
+template <>
+inline std::string_view to_string_view(rust::Ref<rust::std::string::String> str)
+{
+    return std::string_view(reinterpret_cast<const char*>(str.as_str().as_ptr()), str.len());
+}
+
+template <>
+inline std::string to_string(rust::std::string::String& str)
+{
+    return std::string(reinterpret_cast<const char*>(str.as_str().as_ptr()), str.len());
+}
+
+template <>
+inline std::string_view to_string_view(rust::std::string::String& str)
+{
+    return std::string_view(reinterpret_cast<const char*>(str.as_str().as_ptr()), str.len());
+}
+
+template <>
+inline std::string to_string(rust::std::string::String str)
+{
+    return std::string(reinterpret_cast<const char*>(str.as_str().as_ptr()), str.len());
+}
+
+template <>
+inline std::string_view to_string_view(rust::std::string::String str)
+{
+    return std::string_view(reinterpret_cast<const char*>(str.as_str().as_ptr()), str.len());
+}
+
+}  // namespace string
+
+}  // namespace rust_util
 
 namespace task {
 
@@ -42,29 +112,38 @@ using BoxDyn = Box<Dyn<T...>>;
 
 using RustCxxAny = rust::crate::ffi::CxxAny;
 
-using TaskError = rust::crate::tasks::TaskError;
+using TaskError = rust::crate::task::TaskError;
 using RefTaskError = Ref<TaskError>;
 
-using TaskSpawnError = rust::crate::tasks::TaskSpawnError;
+using TaskSpawnError = rust::crate::task::TaskSpawnError;
 
-using FfiTaskAny = rust::Box<rust::crate::tasks::Task<rust::crate::ffi::CxxAny>>;
-using FfiTaskVoid = rust::Box<rust::crate::tasks::Task<rust::Unit>>;
+using FfiTaskAny = rust::Box<rust::crate::task::Task<rust::crate::ffi::CxxAny>>;
+using FfiTaskVoid = rust::Box<rust::crate::task::Task<rust::Unit>>;
 
-using TaskContext = rust::crate::tasks::TaskContext;
+using TaskContext = rust::crate::task::TaskContext;
 using RefTaskContext = Ref<TaskContext>;
-using TaskProgress = rust::crate::tasks::TaskProgress;
+using TaskProgress = rust::crate::task::TaskProgress;
 using RefTaskProgress = Ref<TaskProgress>;
 
-using RustTaskOptions = rust::crate::tasks::TaskOptions;
-using FfiError = rust::crate::tasks::FfiError;
-using ExternalFfiError = rust::crate::tasks::ExternalFfiError;
+using RustTaskOptions = rust::crate::task::TaskOptions;
+using FfiError = rust::crate::task::FfiError;
+using ExternalFfiError = rust::crate::task::ExternalFfiError;
 using FfiAbortHandle = rust::tokio::task::AbortHandle;
 using TokioId = rust::tokio::task::Id;
+using TaskId = rust::crate::task::TaskId;
 
-inline rust::Ref<rust::Str> rust_str_from_c_str(const char* input)
+namespace current {
+
+inline TaskId id()
 {
-    return rust::std::ffi::CStr::from_ptr(reinterpret_cast<const int8_t*>(input)).to_str().expect("invalid_utf8"_rs);
+    return rust::crate::task::current::id();
 }
+inline Option<TaskId> try_id()
+{
+    return rust::crate::task::current::try_id();
+}
+
+}  // namespace current
 
 struct task_spawn_error : public std::runtime_error {
    public:
@@ -109,11 +188,10 @@ class Task {
     AbortHandle on_progress(std::function<void(Ref<TaskProgress>)>) const;
 
    public:
-    TokioId id() const;
+    TaskId id() const;
     bool is_finished() const;
     bool is_cancelled() const;
     void cancel();
-
 };
 
 template <typename T>
@@ -144,7 +222,7 @@ class Task<void> {
     AbortHandle on_progress(std::function<void(Ref<TaskProgress>)>) const;
 
    public:
-    TokioId id() const;
+    TaskId id() const;
     bool is_finished() const;
     bool is_cancelled() const;
     void cancel();
@@ -152,7 +230,7 @@ class Task<void> {
 
 class TaskManager {
    private:
-    rust::crate::tasks::TaskManager m_manager;
+    rust::crate::task::TaskManager m_manager;
 
    public:
     TaskManager();
@@ -171,11 +249,11 @@ inline Option<RustTaskOptions> transform_options_ffi(std::optional<task::TaskOpt
         auto opts = options.value();
         auto ropts = RustTaskOptions::new_();
         if (opts.name.has_value()) {
-            ropts.set_name(Option<String>::Some(rust_str_from_c_str(opts.name.value().c_str()).to_owned()));
+            ropts.set_name(Option<String>::Some(rust_util::str::from_c_str(opts.name.value().c_str()).to_owned()));
         }
         auto tags = ropts.tags_mut();
         for (auto& tag : opts.tags) {
-            tags.insert(rust_str_from_c_str(tag.c_str()).to_owned());
+            tags.insert(rust_util::str::from_c_str(tag.c_str()).to_owned());
         }
     }
     return rust_opts;
@@ -189,7 +267,7 @@ inline Result<RustCxxAny, TaskError> trycatch_any(Try&& func, Args&&... args)
             RustCxxAny(rust::ZngurCppOpaqueOwnedObject::build<task::ffi::CxxAny>(func(std::forward<Args>(args)...))));
     } catch (const ::std::exception& e) {
         return Result<RustCxxAny, TaskError>::Err(
-            TaskError::Error(FfiError::External(ExternalFfiError::new_(2, rust_str_from_c_str(e.what()).to_string()))));
+            TaskError::Error(FfiError::External(ExternalFfiError::new_(2, rust_util::str::from_c_str(e.what()).to_string()))));
     }
 }
 
@@ -201,7 +279,7 @@ inline Result<Unit, TaskError> trycatch_unit(Try&& func, Args&&... args)
         return Result<Unit, TaskError>::Ok(Unit());
     } catch (const ::std::exception& e) {
         return Result<Unit, TaskError>::Err(
-            TaskError::Error(FfiError::External(ExternalFfiError::new_(2, rust_str_from_c_str(e.what()).to_string()))));
+            TaskError::Error(FfiError::External(ExternalFfiError::new_(2, rust_util::str::from_c_str(e.what()).to_string()))));
     }
 }
 
@@ -363,7 +441,7 @@ AbortHandle Task<T>::on_progress(std::function<void(Ref<TaskProgress>)> func) co
 }
 
 template <typename T>
-TokioId Task<T>::id() const
+TaskId Task<T>::id() const
 {
     return m_task.as_ref().id();
 }

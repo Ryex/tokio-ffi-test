@@ -3,6 +3,7 @@ use std::{
     ffi::OsString,
     fmt::Display,
     io,
+    num::NonZeroU64,
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
@@ -15,6 +16,135 @@ use tokio::{
     sync::watch::{Receiver, Sender},
     task::{AbortHandle, JoinHandle},
 };
+
+#[derive(Clone, Copy, Debug, Hash, Eq, PartialEq, PartialOrd, Ord)]
+pub struct TaskId(pub(crate) NonZeroU64);
+
+pub mod current {
+    use std::cell::Cell;
+
+    use super::*;
+
+    struct RuntimeContext {
+        current_task_id: Cell<Option<TaskId>>,
+        current_task_ctx: Cell<Option<Arc<TaskContext>>>,
+    }
+
+    ::std::thread_local! {
+        static CONTEXT: RuntimeContext = const {
+            RuntimeContext {
+                current_task_id: Cell::new(None),
+                current_task_ctx: Cell::new(None),
+            }
+        }
+    }
+
+    pub(crate) fn set_current_task_id(id: Option<TaskId>) -> Option<TaskId> {
+        CONTEXT
+            .try_with(|ctx| ctx.current_task_id.replace(id))
+            .unwrap_or(None)
+    }
+
+    pub(crate) fn current_task_id() -> Option<TaskId> {
+        CONTEXT
+            .try_with(|ctx| ctx.current_task_id.get())
+            .unwrap_or(None)
+    }
+
+    pub(crate) fn set_current_task_ctx(
+        task_ctx: Option<Arc<TaskContext>>,
+    ) -> Option<Arc<TaskContext>> {
+        CONTEXT
+            .try_with(|ctx| ctx.current_task_ctx.replace(task_ctx))
+            .unwrap_or(None)
+    }
+
+    pub(crate) fn current_task_ctx() -> Option<Arc<TaskContext>> {
+        CONTEXT
+            .try_with(|ctx| {
+                let tc = ctx.current_task_ctx.take();
+                let clone = tc.clone();
+                ctx.current_task_ctx.set(tc);
+                clone
+            })
+            .unwrap_or(None)
+    }
+
+    /// Returns the [`TaskId`] of the currently running task.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if called from outside a task.For a version of this
+    /// function that doesn't panic,
+    /// see [`task::current::try_id()`](crate::task::current::try_id()).
+    ///
+    /// [task ID]: crate::task::Id
+    pub fn id() -> TaskId {
+        current_task_id().expect("Can't get a task id when not inside a task")
+    }
+
+    /// Returns the [`TaskId`] of the currently running task, or `None` if called outside
+    /// of a task.
+    ///
+    /// This function is similar to  [`task::current::id()`](crate::task::current::id()), except
+    /// that it returns `None` rather than panicking if called outside of a task
+    /// context.
+    ///
+    /// [task ID]: crate::task::Id
+    pub fn try_id() -> Option<TaskId> {
+        current_task_id()
+    }
+
+    /// Returns the [`TaskContext`] of the currently running task.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if called from outside a task. For a version of this
+    /// function that doesn't panic,
+    /// see [`task::current::try_id()`](crate::task::current::try_context()).
+    ///
+    /// [task ID]: crate::task::Id
+    pub fn context() -> Arc<TaskContext> {
+        current_task_ctx().expect("Can't get a task context when not inside a task")
+    }
+
+    /// Returns the [`TaskContext`] of the currently running task, or `None` if called outside
+    /// of a task.
+    ///
+    /// This function is similar to  [`task::current::context()`](crate::task::current::context()), except
+    /// that it returns `None` rather than panicking if called outside of a task
+    /// context.
+    ///
+    /// [task ID]: crate::task::Id
+    pub fn try_context() -> Option<Arc<TaskContext>> {
+        current_task_ctx()
+    }
+}
+
+impl std::fmt::Display for TaskId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl TaskId {
+    pub(crate) fn next() -> Self {
+        static NEXT_ID: AtomicU64 = AtomicU64::new(1);
+
+        loop {
+            // Wraps arround on overflow, if a previous task hasn't been freed by then we have
+            // problems
+            let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+            if let Some(id) = NonZeroU64::new(id) {
+                return Self(id);
+            }
+        }
+    }
+
+    pub fn as_u64(&self) -> u64 {
+        self.0.get()
+    }
+}
 
 #[derive(Error, Debug)]
 pub enum FfiError {
@@ -116,15 +246,15 @@ pub enum TaskError {
 }
 
 impl TaskError {
-    pub fn as_task(&self) -> Option<&TaskError> {
-        if matches!(&self, Self::TaskCancelled) {
+    pub fn as_task_cancelled(&self) -> Option<&TaskError> {
+        if let Self::TaskCancelled = &self {
             Some(self)
         } else {
             None
         }
     }
 
-    pub fn as_join(&self) -> Option<&tokio::task::JoinError> {
+    pub fn as_join_error(&self) -> Option<&tokio::task::JoinError> {
         if let Self::JoinError(je) = &self {
             Some(je)
         } else {
@@ -132,7 +262,7 @@ impl TaskError {
         }
     }
 
-    pub fn as_spawn(&self) -> Option<&TaskSpawnError> {
+    pub fn as_spawn_error(&self) -> Option<&TaskSpawnError> {
         if let Self::SpawnError(se) = &self {
             Some(se)
         } else {
@@ -166,18 +296,18 @@ impl TaskProgress {
 
 #[derive(Debug, Clone)]
 pub struct TaskMetadata {
-    id: tokio::task::Id,
+    id: TaskId,
     abort_handle: tokio::task::AbortHandle,
     #[allow(dead_code)]
     progress: Option<Receiver<TaskProgress>>,
     name: Option<String>,
     tags: HashSet<String>,
     #[allow(dead_code)]
-    context: Option<Arc<TaskContext>>,
+    context: Arc<TaskContext>,
 }
 
 impl TaskMetadata {
-    pub fn id(&self) -> tokio::task::Id {
+    pub fn id(&self) -> TaskId {
         self.id
     }
 
@@ -245,11 +375,10 @@ impl TaskOptions {
         self
     }
 
-    pub fn with_tags<T, S>(mut self, tags: T )     -> Self 
+    pub fn with_tags<T, S>(mut self, tags: T) -> Self
     where
         T: IntoIterator<Item = S>,
         S: AsRef<str>,
-
     {
         self.tags
             .extend(tags.into_iter().map(|tag| tag.as_ref().to_owned()));
@@ -331,21 +460,21 @@ impl TaskContext {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct TaskListing(Arc<Mutex<HashMap<tokio::task::Id, Arc<TaskMetadata>>>>);
+pub struct TaskListing(Arc<Mutex<HashMap<TaskId, Arc<TaskMetadata>>>>);
 
 impl TaskListing {
     pub fn new() -> Self {
         TaskListing::default()
     }
 
-    pub fn insert(&self, id: tokio::task::Id, metadata: TaskMetadata) {
+    pub fn insert(&self, id: TaskId, metadata: TaskMetadata) {
         self.0
             .lock()
             .expect("tasks listing lock poisoned")
             .insert(id, Arc::new(metadata));
     }
 
-    pub fn remove(&self, id: tokio::task::Id) {
+    pub fn remove(&self, id: TaskId) {
         self.0
             .lock()
             .expect("tasks listing lock poisoned")
@@ -387,10 +516,12 @@ impl Default for TaskManager {
 }
 
 impl TaskManager {
+    /// Construct a new TaskManager
     pub fn new() -> Self {
         TaskManager::default()
     }
 
+    /// Fetch the underlying tokio runtime
     pub fn runtime(&self) -> Arc<tokio::runtime::Runtime> {
         self.runtime.clone()
     }
@@ -413,26 +544,31 @@ impl TaskManager {
         self.runtime.spawn_blocking(fun)
     }
 
-    /// spawn a future and record it's task
+    /// spawn a future and record it as a [`Task`]
     pub fn spawn<T, F>(
         &self,
         fut: F,
-        ctx: Option<Arc<TaskContext>>,
+        ctx: Arc<TaskContext>,
         options: Option<TaskSpawnOptions>,
-    ) -> JoinHandle<Result<T, TaskError>>
+    ) -> (TaskId, JoinHandle<Result<T, TaskError>>)
     where
         T: Send + 'static,
         F: Future<Output = Result<T, TaskError>> + Send + 'static,
     {
+        let id = TaskId::next();
         let tasks = self.tasks.clone();
-        let task = self.runtime.spawn(async move {
-            let ret = fut.await;
-            tasks.remove(tokio::task::id());
-            ret
-        });
+        let task = self.runtime.spawn(TaskFuture::new(
+            async move {
+                let ret = fut.await;
+                tasks.remove(id);
+                ret
+            },
+            id,
+            ctx.clone(),
+        ));
         let options = options.unwrap_or_default();
         let meta = TaskMetadata {
-            id: task.id(),
+            id,
             abort_handle: task.abort_handle(),
             context: ctx,
             progress: options.progress,
@@ -440,39 +576,45 @@ impl TaskManager {
             tags: options.tags,
         };
         self.tasks.insert(meta.id, meta);
-        task
+        (id, task)
     }
 
+    /// spawn a blocking function and record it as a [`Task`]
     pub fn spawn_blocking<T, F>(
         &self,
         fun: F,
-        ctx: Option<Arc<TaskContext>>,
+        ctx: Arc<TaskContext>,
         options: Option<TaskSpawnOptions>,
-    ) -> JoinHandle<Result<T, TaskError>>
+    ) -> (TaskId, JoinHandle<Result<T, TaskError>>)
     where
         T: Send + 'static,
         F: FnOnce() -> Result<T, TaskError> + Send + 'static,
     {
+        let id = TaskId::next();
         let tasks = self.tasks.clone();
+        let context = ctx.clone();
         let task = self.runtime.spawn(async move {
-            let ret = tokio::task::spawn_blocking(fun)
-                .await
-                .map_err(Into::<TaskError>::into)
-                .and_then(|ret| ret);
-            tasks.remove(tokio::task::id());
+            let ret = tokio::task::spawn_blocking(move || {
+                let _guard = TaskGuard::enter(id, ctx.clone());
+                fun()
+            })
+            .await
+            .map_err(Into::<TaskError>::into)
+            .and_then(|ret| ret);
+            tasks.remove(id);
             ret
         });
         let options = options.unwrap_or_default();
         let meta = TaskMetadata {
-            id: task.id(),
+            id,
             abort_handle: task.abort_handle(),
-            context: ctx,
+            context,
             progress: options.progress,
             name: options.name,
             tags: options.tags,
         };
         self.tasks.insert(meta.id, meta);
-        task
+        (id, task)
     }
 
     pub fn new_task<T, F, R>(&self, f: F, options: Option<TaskOptions>) -> Box<Task<T>>
@@ -537,6 +679,7 @@ impl TaskSpawnOptions {
     }
 }
 
+/// Wrapper for a tokio Task handle that marks if it's already awaited elsewhere
 enum TaskHandle<T: Send + 'static> {
     Owned(JoinHandle<T>),
     Continued(AbortHandle),
@@ -569,11 +712,68 @@ impl<T: Send + 'static> TaskHandle<T> {
     }
 }
 
+/// Guard that ensure the thread_local current [`TaskId`] and [`TaskContext`] is correct
+pub struct TaskGuard {
+    parent_task_id: Option<TaskId>,
+    parent_task_ctx: Option<Arc<TaskContext>>,
+}
+
+impl TaskGuard {
+    fn enter(id: TaskId, ctx: Arc<TaskContext>) -> Self {
+        TaskGuard {
+            parent_task_id: current::set_current_task_id(Some(id)),
+            parent_task_ctx: current::set_current_task_ctx(Some(ctx)),
+        }
+    }
+}
+
+impl Drop for TaskGuard {
+    fn drop(&mut self) {
+        current::set_current_task_id(self.parent_task_id);
+        current::set_current_task_ctx(self.parent_task_ctx.take());
+    }
+}
+
+/// Wrapper for a future that enteres a [`TaskIdGuard`] when polling
+#[pin_project::pin_project]
+pub struct TaskFuture<T, Fut>
+where
+    T: Send + 'static,
+    Fut: Future<Output = T> + Send + 'static,
+{
+    #[pin]
+    inner: Fut,
+    id: TaskId,
+    ctx: Arc<TaskContext>,
+}
+
+impl<T: Send + 'static, Fut: Future<Output = T> + Send + 'static> Future for TaskFuture<T, Fut> {
+    type Output = T;
+
+    fn poll(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Self::Output> {
+        let _guard = TaskGuard::enter(self.id, self.ctx.clone());
+        self.project().inner.poll(cx)
+    }
+}
+
+impl<T: Send + 'static, Fut: Future<Output = T> + Send + 'static> TaskFuture<T, Fut> {
+    fn new(fut: Fut, id: TaskId, ctx: Arc<TaskContext>) -> Self {
+        TaskFuture {
+            inner: fut,
+            id,
+            ctx,
+        }
+    }
+}
+
 pub struct Task<T: Send + 'static> {
-    id: tokio::task::Id,
+    id: TaskId,
     manager: TaskManager,
     handle: Mutex<Option<TaskHandle<Result<T, TaskError>>>>,
-    ctx: Option<Arc<TaskContext>>,
+    ctx: Arc<TaskContext>,
     progress: Option<Receiver<TaskProgress>>,
 }
 
@@ -583,12 +783,14 @@ impl<T: Send + 'static> Task<T> {
         F: FnOnce() -> R,
         R: Future<Output = Result<T, TaskError>> + Send + 'static,
     {
-        let task = manager.spawn(f(), None, options.map(TaskOptions::to_spawn_options));
+        let tc = TaskContext::new();
+        let ctx = tc.clone();
+        let (id, task) = manager.spawn(f(), tc, options.map(TaskOptions::to_spawn_options));
         Box::new(Task {
-            id: task.id(),
+            id,
             manager: manager.clone(),
             handle: Mutex::new(Some(TaskHandle::Owned(task))),
-            ctx: None,
+            ctx,
             progress: None,
         })
     }
@@ -597,12 +799,14 @@ impl<T: Send + 'static> Task<T> {
     where
         F: FnOnce() -> Result<T, TaskError> + Send + 'static,
     {
-        let task = manager.spawn_blocking(f, None, options.map(TaskOptions::to_spawn_options));
+        let tc = TaskContext::new();
+        let ctx = tc.clone();
+        let (id, task) = manager.spawn_blocking(f, tc, options.map(TaskOptions::to_spawn_options));
         Box::new(Task {
-            id: task.id(),
+            id,
             manager: manager.clone(),
             handle: Mutex::new(Some(TaskHandle::Owned(task))),
-            ctx: None,
+            ctx,
             progress: None,
         })
     }
@@ -615,9 +819,9 @@ impl<T: Send + 'static> Task<T> {
         let (ptx, prx) = tokio::sync::watch::channel(TaskProgress::default());
         let tc = TaskContext::with_progress(ptx);
         let ctx = tc.clone();
-        let task = manager.spawn(
+        let (id, task) = manager.spawn(
             f(&tc),
-            Some(ctx.clone()),
+            tc.clone(),
             Some(
                 options
                     .unwrap_or_default()
@@ -626,10 +830,10 @@ impl<T: Send + 'static> Task<T> {
             ),
         );
         Box::new(Task {
-            id: task.id(),
+            id,
             manager: manager.clone(),
             handle: Mutex::new(Some(TaskHandle::Owned(task))),
-            ctx: Some(ctx),
+            ctx,
             progress: Some(prx),
         })
     }
@@ -645,9 +849,9 @@ impl<T: Send + 'static> Task<T> {
         let (ptx, prx) = tokio::sync::watch::channel(TaskProgress::default());
         let tc = TaskContext::with_progress(ptx);
         let ctx = tc.clone();
-        let task = manager.spawn_blocking(
+        let (id, task) = manager.spawn_blocking(
             move || f(&tc),
-            Some(ctx.clone()),
+            ctx.clone(),
             Some(
                 options
                     .unwrap_or_default()
@@ -656,10 +860,10 @@ impl<T: Send + 'static> Task<T> {
             ),
         );
         Box::new(Task {
-            id: task.id(),
+            id,
             manager: manager.clone(),
             handle: Mutex::new(Some(TaskHandle::Owned(task))),
-            ctx: Some(ctx),
+            ctx,
             progress: Some(prx),
         })
     }
@@ -686,25 +890,31 @@ impl<T: Send + 'static> Task<T> {
             *handle_lock = Some(continued);
             handle
         };
-        let task = self.manager.spawn(
+        let tc = TaskContext::new();
+        let ctx = tc.clone();
+        let (id, task) = self.manager.spawn(
             async move {
                 let res = handle
                     .await
                     .map_err(Into::<TaskError>::into)
                     .and_then(|ret| ret);
-                tokio::task::spawn_blocking(move || callback(res))
-                    .await
-                    .map_err(Into::<TaskError>::into)
-                    .and_then(|ret| ret)
+                let id = current::id(); // recover id so it can be rest in blocking continuation
+                tokio::task::spawn_blocking(move || {
+                    let _guard = TaskGuard::enter(id, tc);
+                    callback(res)
+                })
+                .await
+                .map_err(Into::<TaskError>::into)
+                .and_then(|ret| ret)
             },
-            None,
+            ctx.clone(),
             options.map(TaskOptions::to_spawn_options),
         );
         Ok(Box::new(Task {
-            id: task.id(),
+            id,
             manager: self.manager.clone(),
             handle: Mutex::new(Some(TaskHandle::Owned(task))),
-            ctx: None,
+            ctx,
             progress: None,
         }))
     }
@@ -730,18 +940,22 @@ impl<T: Send + 'static> Task<T> {
         let (ptx, prx) = tokio::sync::watch::channel(TaskProgress::default());
         let tc = TaskContext::with_progress(ptx);
         let ctx = tc.clone();
-        let task = self.manager.spawn(
+        let (id, task) = self.manager.spawn(
             async move {
                 let res = handle
                     .await
                     .map_err(Into::<TaskError>::into)
                     .and_then(|ret| ret);
-                tokio::task::spawn_blocking(move || callback(res, &tc))
+                let id = current::id(); // recover id so it can be rest in blocking continuation
+                tokio::task::spawn_blocking(move || {
+                    let _guard = TaskGuard::enter(id, tc.clone());
+                    callback(res, &tc)
+                })
                     .await
                     .map_err(Into::<TaskError>::into)
                     .and_then(|ret| ret)
             },
-            Some(ctx.clone()),
+            ctx.clone(),
             Some(
                 options
                     .unwrap_or_default()
@@ -750,10 +964,10 @@ impl<T: Send + 'static> Task<T> {
             ),
         );
         Ok(Box::new(Task {
-            id: task.id(),
+            id,
             manager: self.manager.clone(),
             handle: Mutex::new(Some(TaskHandle::Owned(task))),
-            ctx: Some(ctx),
+            ctx,
             progress: Some(prx),
         }))
     }
@@ -767,13 +981,11 @@ impl<T: Send + 'static> Task<T> {
     }
 
     pub fn cancel(&self) {
-        if let Some(ctx) = &self.ctx {
-            ctx.cancel();
-        }
+        self.ctx.cancel();
     }
 
     pub fn is_cancelled(&self) -> bool {
-        self.ctx.as_ref().is_some_and(|ctx| ctx.is_cancelled())
+        self.ctx.is_cancelled()
     }
 
     pub fn on_progress<F>(&self, callback: F) -> Option<AbortHandle>
@@ -793,7 +1005,7 @@ impl<T: Send + 'static> Task<T> {
         }
     }
 
-    pub fn id(&self) -> tokio::task::Id {
+    pub fn id(&self) -> TaskId {
         self.id
     }
 }

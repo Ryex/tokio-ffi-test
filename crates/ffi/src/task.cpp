@@ -1,4 +1,4 @@
-#include "tasks-ffi/tasks.hpp"
+#include "task-ffi/task.hpp"
 
 namespace task {
 
@@ -16,7 +16,7 @@ void AbortHandle::abort()
     }
 }
 
-TaskManager::TaskManager() : m_manager(rust::crate::tasks::TaskManager::new_()) {}
+TaskManager::TaskManager() : m_manager(rust::crate::task::TaskManager::new_()) {}
 
 Task<void>::Task(FfiTaskVoid&& task) : m_task(std::move(task)) {}
 
@@ -84,7 +84,7 @@ AbortHandle Task<void>::on_progress(std::function<void(Ref<TaskProgress>)> func)
         })));
 }
 
-TokioId Task<void>::id() const
+TaskId Task<void>::id() const
 {
     return m_task.as_ref().id();
 }

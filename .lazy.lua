@@ -2,6 +2,15 @@ local function filter_clangd(server)
 	return server ~= "clangd" and server ~= "rust_analyzer" and server ~= "rust-analyzer"
 end
 
+
+vim.filetype.add {
+  pattern = {
+    ["/.*%.zng"] = 'zngur',
+  },
+}
+
+vim.treesitter.language.register('rust', 'zngur')
+
 ---@type LazySpec
 return {
 	{

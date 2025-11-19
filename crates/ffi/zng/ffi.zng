@@ -1,12 +1,45 @@
 #cpp_additional_includes "
-#include <tasks-ffi/types.hpp>
+#include <task-ffi/types.hpp>
 "
 
 use ::std::string::String as String;
 use ::std::vec::Vec as Vec;
 use ::std::option::Option as Option ;
+use ::std::result::Result as Result;
+use ::std::collections::HashSet as HashSet;
 
-mod crate::tasks {
+use crate::task::TaskOptions as TaskOptions;
+use crate::task::TaskId as TaskId;
+use crate::task::TaskError as TaskError;
+use crate::task::TaskContext as TaskContext;
+use crate::task::TaskProgress as TaskProgress;
+
+use crate::task::Task as Task;
+use crate::task::TaskSpawnError as TaskSpawnError;
+use crate::task::FfiError as FfiError;
+use crate::task::ExternalFfiError as ExternalFfiError;
+use crate::task::IoError as IoError;
+
+mod crate::task {
+
+    type TaskId {
+        #layout(size = 8, align = 8 );
+
+        wellknown_traits(Copy);
+
+        fn as_u64(&self) -> u64;
+        fn to_string(&self) -> String;
+    }
+
+    mod current {
+
+        fn id() -> TaskId;
+        fn try_id() -> Option<TaskId>;
+
+        fn context() -> ::std::sync::Arc<TaskContext>;
+        fn try_context() -> Option<::std::sync::Arc<TaskContext>>;
+
+    }
 
     type TaskProgress {
         #layout(size = 16, align = 8);
@@ -20,34 +53,29 @@ mod crate::tasks {
     type TaskMetadata {
         #layout(size = 112, align = 8);
 
-        fn id(&self) -> ::tokio::task::Id;
+        fn id(&self) -> TaskId;
         fn id_display(&self) -> String;
         fn abort_handle(&self) -> ::tokio::task::AbortHandle;
         fn name(&self) -> Option<&String>;
-        fn tags(&self) -> &::std::collections::HashSet<String>;
+        fn tags(&self) -> &HashSet<String>;
     }
 
     type TaskOptions {
         #layout(size = 72, align = 8);
 
-        fn new() -> crate::tasks::TaskOptions;
-        fn clone(&self) -> crate::tasks::TaskOptions;
+        fn new() -> TaskOptions;
+        fn clone(&self) -> TaskOptions;
         
         fn name(&self) -> Option<&String>;
-        fn set_name(
-            &mut self,
-            Option<String>
-        ) -> &mut crate::tasks::TaskOptions;
+        fn set_name(&mut self, Option<String>) -> &mut TaskOptions;
         
-        fn tags(&self) -> &::std::collections::HashSet<String>;
-        fn tags_mut(
-            &mut self
-        ) -> &mut ::std::collections::HashSet<String>;
+        fn tags(&self) -> &HashSet<String>;
+        fn tags_mut(&mut self) -> &mut HashSet<String>;
 
-        fn with_name(self, String) -> crate::tasks::TaskOptions;
+        fn with_name(self, String) -> TaskOptions;
         
-        fn with_tags<Vec<&str>, &str>(self, Vec<&str>) -> crate::tasks::TaskOptions;
-        fn with_tags<Vec<String>, String>(self, Vec<String>) -> crate::tasks::TaskOptions;
+        fn with_tags<Vec<&str>, &str>(self, Vec<&str>) -> TaskOptions;
+        fn with_tags<Vec<String>, String>(self, Vec<String>) -> TaskOptions;
     }
 
     type TaskContext {
@@ -61,6 +89,20 @@ mod crate::tasks {
         fn is_cancelled(&self) -> bool;
         fn cancel(&self);
     }
+}
+
+type ::std::sync::Arc<TaskContext> {
+    #layout(size =  8, align = 8);
+    
+    fn deref(&self) -> &TaskContext use ::std::ops::Deref;
+}
+
+type Option<::std::sync::Arc<TaskContext>> {
+    #layout(size =  8, align = 8);
+
+    fn is_some(&self) -> bool;
+    fn unwrap(self) -> ::std::sync::Arc<TaskContext>;
+    fn expect(self, &str) -> ::std::sync::Arc<TaskContext>;
 }
 
 type crate::ffi::CxxAny {

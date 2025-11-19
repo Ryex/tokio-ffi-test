@@ -7,10 +7,12 @@
 #include <QPushButton>
 #include <memory>
 
-#include "tasks-ffi/tasks.hpp"
+#include "task-ffi/task.hpp"
 
 #include <chrono>
 #include <thread>
+
+#include <QtLogging>
 
 Application::Application(int& argc, char** argv) : QApplication(argc, argv)
 {
@@ -56,6 +58,8 @@ void Application::setUpTasks()
 
             ctx.set_progress_maximum(n);
 
+            qDebug() << "TaskId:" << rust_util::string::to_string(task::current::id().to_string());
+
             for (int i = 2; i < n; ++i) {
                 nextTerm = t1 + t2;
                 t1 = t2;
@@ -71,6 +75,7 @@ void Application::setUpTasks()
         promise->start();
         auto t = task.then(
             [promise](int val) mutable {
+                qDebug() << "Continuation TaskId:" << rust_util::string::to_string(task::current::id().to_string());
                 promise->addResult(val);
                 promise->finish();
             },

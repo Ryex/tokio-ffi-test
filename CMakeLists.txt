@@ -40,9 +40,9 @@ target_sources(tokio_ffi_test
   FILE_SET HEADERS
   BASE_DIRS crates/ffi/include
   FILES
-  crates/ffi/include/tasks-ffi/generated.h
-  crates/ffi/include/tasks-ffi/types.hpp
-  crates/ffi/include/tasks-ffi/tasks.hpp
+  crates/ffi/include/task-ffi/generated.h
+  crates/ffi/include/task-ffi/types.hpp
+  crates/ffi/include/task-ffi/task.hpp
 )
   
 

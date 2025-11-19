@@ -1,5 +1,5 @@
 // pub mod ffi;
-pub mod tasks;
+pub mod task;
 mod ffi;
 
 // static REQWEST_CLIENT: OnceLock<Mutex<reqwest::Client>> = OnceLock::new();

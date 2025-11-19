@@ -24,7 +24,7 @@ fn main() {
     let generated_h = out_dir.join("generated.h");
     let target_h = crate_dir
         .join("include")
-        .join("tasks-ffi")
+        .join("task-ffi")
         .join("generated.h");
 
     Zngur::from_zng_file(&main_zng)
@@ -49,25 +49,25 @@ fn main() {
     let build = || build.clone();
     // file may not exist if zngur determines it's not needed
 
-    let headers = ["include/tasks-ffi/tasks.hpp", "include/tasks-ffi/types.hpp"];
+    let headers = ["include/task-ffi/task.hpp", "include/task-ffi/types.hpp"];
     for header in &headers {
         build_rs::output::rerun_if_changed(header);
     }
 
-    let sources: Vec<&str> = vec!["src/tasks.cpp"];
+    let sources: Vec<&str> = vec!["src/task.cpp"];
 
-    let mut tasksffi = build();
-    tasksffi.files(&sources);
+    let mut taskffi = build();
+    taskffi.files(&sources);
 
     if generated_cpp.exists() {
-        tasksffi.file(&generated_cpp);
+        taskffi.file(&generated_cpp);
     }
 
     for src in &sources {
         build_rs::output::rerun_if_changed(src);
     }
 
-    tasksffi.compile("tasksffi")
+    taskffi.compile("taskffi")
 }
 
 fn check_and_generate_zng(zng_path: &Path, out_path: &Path) -> PathBuf {

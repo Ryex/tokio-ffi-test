@@ -32,11 +32,13 @@ reqwest = { workspace = true, default-features = false, features = [
 ] }
 thiserror = "2.0.12"
 futures-util = {version ="0.3.31", features = ["channel"]}
+pin-project = "1.1.10"
 
 [build-dependencies]
 cc = "1.0"
 build-rs = "0.3.2"
 zngur = "0.7.0"
+# zngur = { git = "https://github.com/HKalbasi/zngur.git", branch = "main" }
 zngur-def = "0.7.0"
 zngur-parser = "0.7.0"
 sailfish = "0.10.0"

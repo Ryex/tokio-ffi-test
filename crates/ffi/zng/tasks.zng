@@ -1,138 +1,112 @@
-type Box<
-    dyn Fn() -> ::std::result::Result<(), crate::tasks::TaskError> + Send
-> {
+// ---------------------------------------
+// Functions / Closures passed from C++
+// ---------------------------------------
+
+use crate::task::TaskOptions as TaskOptions;
+use crate::task::TaskId as TaskId;
+use crate::task::TaskError as TaskError;
+use crate::task::TaskContext as TaskContext;
+use crate::task::TaskProgress as TaskProgress;
+
+use crate::task::Task as Task;
+use crate::task::TaskSpawnError as TaskSpawnError;
+use crate::task::FfiError as FfiError;
+use crate::task::ExternalFfiError as ExternalFfiError;
+use crate::task::IoError as IoError;
+
+use crate::ffi::CxxAny as CxxAny;
+
+use ::std::result::Result as Result;
+use ::std::option::Option as Option;
+
+use ::std::string::String as String;
+
+type Box<dyn Fn() -> Result<(), TaskError> + Send> {
     #layout(size = 16, align = 8);
 }
 
-type Box<
-    dyn Fn(
-        &crate::tasks::TaskContext
-    ) -> ::std::result::Result<(), crate::tasks::TaskError> + Send
-> {
+type Box<dyn Fn(&TaskContext) -> Result<(), TaskError> + Send> {
     #layout(size = 16, align = 8);
 }
 
-type Box<
-    dyn Fn() -> ::std::result::Result<
-        crate::ffi::CxxAny,
-        crate::tasks::TaskError
-    > + Send
-> {
+type Box<dyn Fn() -> Result<CxxAny, TaskError> + Send> {
     #layout(size = 16, align = 8);
 }
 
-type Box<
-    dyn Fn(&crate::tasks::TaskContext) -> ::std::result::Result<
-        crate::ffi::CxxAny,
-        crate::tasks::TaskError
-    > + Send
-> {
+type Box<dyn Fn(&TaskContext) -> Result<CxxAny, TaskError> + Send> {
     #layout(size = 16, align = 8);
 }
 
-type Box<
-    dyn Fn(
-        ::std::result::Result<(), crate::tasks::TaskError>
-    ) -> ::std::result::Result<(), crate::tasks::TaskError> + Send
-> {
+type Box<dyn Fn(Result<(), TaskError>) -> Result<(), TaskError> + Send> {
     #layout(size = 16, align = 8);
 }
 
-type Box<
-    dyn Fn(
-        ::std::result::Result<(), crate::tasks::TaskError>,
-        &crate::tasks::TaskContext
-    ) -> ::std::result::Result<(), crate::tasks::TaskError> + Send
-> {
+type Box<dyn Fn(Result<(), TaskError>, &TaskContext) -> Result<(), TaskError> + Send> {
     #layout(size = 16, align = 8);
 }
 
-type Box<
-    dyn Fn(
-        ::std::result::Result<(), crate::tasks::TaskError>
-    ) -> ::std::result::Result<
-        crate::ffi::CxxAny,
-        crate::tasks::TaskError
-    > + Send
-> {
+type Box<dyn Fn(Result<(), TaskError>) -> Result<CxxAny, TaskError> + Send> {
     #layout(size = 16, align = 8);
 }
 
-type Box<
-    dyn Fn(
-        ::std::result::Result<(), crate::tasks::TaskError>,
-        &crate::tasks::TaskContext
-    ) -> ::std::result::Result<
-        crate::ffi::CxxAny,
-        crate::tasks::TaskError
-    > + Send
-> {
+type Box<dyn Fn(Result<(), TaskError>, &TaskContext) -> Result<CxxAny, TaskError> + Send> {
     #layout(size = 16, align = 8);
 }
 
 
-type Box<
-    dyn Fn(
-        ::std::result::Result<crate::ffi::CxxAny, crate::tasks::TaskError>
-    ) -> ::std::result::Result<(), crate::tasks::TaskError> + Send
-> {
+type Box<dyn Fn(Result<CxxAny, TaskError>) -> Result<(), TaskError> + Send> {
     #layout(size = 16, align = 8);
 }
 
-type Box<
-    dyn Fn(
-        ::std::result::Result<crate::ffi::CxxAny, crate::tasks::TaskError>,
-        &crate::tasks::TaskContext
-    ) -> ::std::result::Result<(), crate::tasks::TaskError> + Send
-> {
+type Box<dyn Fn(Result<CxxAny, TaskError>, &TaskContext) -> Result<(), TaskError> + Send> {
     #layout(size = 16, align = 8);
 }
 
-type Box<
-    dyn Fn(
-        ::std::result::Result<crate::ffi::CxxAny, crate::tasks::TaskError>
-    ) -> ::std::result::Result<
-        crate::ffi::CxxAny,
-        crate::tasks::TaskError
-    > + Send
-> {
+type Box<dyn Fn(Result<CxxAny, TaskError>) -> Result<CxxAny, TaskError> + Send> {
     #layout(size = 16, align = 8);
 }
 
-type Box<
-    dyn Fn(
-        ::std::result::Result<crate::ffi::CxxAny, crate::tasks::TaskError>,
-        &crate::tasks::TaskContext
-    ) -> ::std::result::Result<
-        crate::ffi::CxxAny,
-        crate::tasks::TaskError
-    > + Send
-> {
+type Box<dyn Fn(Result<CxxAny, TaskError>, &TaskContext) -> Result<CxxAny, TaskError> + Send> {
     #layout(size = 16, align = 8);
 }
 
-type Box<dyn Fn(&crate::tasks::TaskProgress) + Send> {
+type Box<dyn Fn(&TaskProgress) + Send> {
     #layout(size = 16, align = 8);
 }
 
+// ----------------------
+// Optionals
+// -----------------------
 
 mod std {
     mod option {
-        type Option<crate::tasks::TaskOptions> {
+        type Option<TaskId> {
+            #layout(size = 8, align = 8);
+            constructor None;
+            constructor Some(TaskId);
+
+            fn is_some(&self) -> bool;
+            fn unwrap(self) -> TaskId;
+            fn expect(self, &str) -> TaskId;
+        }
+
+        type Option<TaskOptions> {
             #layout(size = 72, align = 8);
             wellknown_traits(Debug);
             
             constructor None;
-            constructor Some(crate::tasks::TaskOptions);
+            constructor Some(TaskOptions);
 
             fn is_some(&self) -> bool;
-            fn unwrap(self) -> crate::tasks::TaskOptions;
+            fn unwrap(self) -> TaskOptions;
+            fn expect(self, &str) -> TaskOptions;
         }
 
         type Option<::tokio::task::AbortHandle> {
             #layout(size = 8, align = 8);
             fn is_some(&self) -> bool;
             fn unwrap(self) -> ::tokio::task::AbortHandle;
+            fn expect(self, &str) -> ::tokio::task::AbortHandle;
             fn as_ref(&self) -> Option<&::tokio::task::AbortHandle>;
         }
 
@@ -140,66 +114,75 @@ mod std {
             #layout(size = 8, align = 8);
             fn is_some(&self) -> bool;
             fn unwrap(self) -> &::tokio::task::AbortHandle;
+            fn expect(self, &str) -> &::tokio::task::AbortHandle;
         }
 
         type Option<&::tokio::task::JoinError> {
             #layout(size = 8, align = 8);
             fn is_some(&self) -> bool;
             fn unwrap(self) -> &::tokio::task::JoinError;
+            fn expect(self, &str) -> &::tokio::task::JoinError;
         }
 
-        type Option<&crate::tasks::TaskError> {
+        type Option<&TaskError> {
             #layout(size = 8, align = 8);
             fn is_some(&self) -> bool;
-            fn unwrap(self) -> &crate::tasks::TaskError;
+            fn unwrap(self) -> &TaskError;
+            fn expect(self, &str) -> &TaskError;
         }
 
-        type Option<crate::tasks::TaskError> {
+        type Option<TaskError> {
             #layout(size = 40, align = 8);
             fn is_some(&self) -> bool;
-            fn unwrap(self) -> crate::tasks::TaskError;
-            fn as_ref(&self) -> Option<&crate::tasks::TaskError>;
+            fn unwrap(self) -> TaskError;
+            fn expect(self, &str) -> TaskError;
+            fn as_ref(&self) -> Option<&TaskError>;
         }
 
-        type Option<&crate::tasks::TaskSpawnError> {
+        type Option<&TaskSpawnError> {
             #layout(size = 8, align = 8);
             fn is_some(&self) -> bool;
-            fn unwrap(self) -> &crate::tasks::TaskSpawnError;
+            fn unwrap(self) -> &TaskSpawnError;
+            fn expect(self, &str) -> &TaskSpawnError;
         }
 
-        type Option<crate::tasks::TaskSpawnError> {
+        type Option<TaskSpawnError> {
             #layout(size = 24, align = 8);
             fn is_some(&self) -> bool;
-            fn unwrap(self) -> crate::tasks::TaskSpawnError;
-            fn as_ref(&self) -> Option<&crate::tasks::TaskSpawnError>;
+            fn unwrap(self) -> TaskSpawnError;
+            fn expect(self, &str) -> TaskSpawnError;
+            fn as_ref(&self) -> Option<&TaskSpawnError>;
         }
 
-        type Option<&crate::tasks::FfiError> {
+        type Option<&FfiError> {
             #layout(size = 8, align = 8);
             fn is_some(&self) -> bool;
-            fn unwrap(self) -> &crate::tasks::FfiError;
+            fn unwrap(self) -> &FfiError;
+            fn expect(self, &str) -> &FfiError;
         }
 
-        type Option<&crate::tasks::ExternalFfiError> {
+        type Option<&ExternalFfiError> {
             #layout(size = 8, align = 8);
             fn is_some(&self) -> bool;
-            fn unwrap(self) -> &crate::tasks::ExternalFfiError;
+            fn unwrap(self) -> &ExternalFfiError;
+            fn expect(self, &str) -> &ExternalFfiError;
         }
 
-        type Option<&crate::tasks::IoError> {
+        type Option<&IoError> {
             #layout(size = 8, align = 8);
             fn is_some(&self) -> bool;
-            fn unwrap(self) -> &crate::tasks::IoError;
+            fn unwrap(self) -> &IoError;
+            fn expect(self, &str) -> &IoError;
         }
     }
 }
 
 
-mod crate::tasks {
+mod crate::task {
 
     type TaskSpawnError {
         #layout(size = 24, align = 8);
-        fn to_string(&self) -> ::std::string::String;
+        fn to_string(&self) -> String;
     }
 
     type TaskError {
@@ -207,7 +190,11 @@ mod crate::tasks {
 
         constructor Error(FfiError);
 
-        fn to_string(&self) -> ::std::string::String;
+        fn to_string(&self) -> String;
+        fn as_task_cancelled(&self) -> Option<&TaskError>;
+        fn as_join_error(&self) -> Option<& ::tokio::task::JoinError>;
+        fn as_spawn_error(&self) -> Option<&TaskSpawnError>;
+        fn as_error(&self) -> Option<&FfiError>;
     }
 
     type FfiError {
@@ -215,288 +202,287 @@ mod crate::tasks {
 
         constructor External(ExternalFfiError);
 
-        fn to_string(&self) -> ::std::string::String;
+        fn to_string(&self) -> String;
+
+        fn as_external(&self) -> Option<&ExternalFfiError>;
+        fn as_io(&self) -> Option<&IoError>;
     }
 
     type IoError {
         #layout(size = 32, align = 8);
-        fn to_string(&self) -> ::std::string::String;
+        fn to_string(&self) -> String;
     }
 
     type ExternalFfiError {
         #layout(size = 32, align = 8);
         
-        fn new(u32, ::std::string::String) -> ExternalFfiError;
+        fn new(u32, String) -> ExternalFfiError;
         
-        fn to_string(&self) -> ::std::string::String;
+        fn to_string(&self) -> String;
     }
 
-    type crate::tasks::TaskManager {
+    type TaskManager {
         #layout(size = 16, align = 8);
 
-        fn new() -> crate::tasks::TaskManager;
+        fn new() -> TaskManager;
 
-        fn new_blocking<
-            (),
-            Box<dyn Fn() -> ::std::result::Result<
-                (),
-                crate::tasks::TaskError
-            > + Send>
-        >(
+        fn new_blocking<(), Box<dyn Fn() -> Result<(), TaskError> + Send>>(
             &self,
-            Box<dyn Fn() -> ::std::result::Result<
+            Box<dyn Fn() -> Result<
                 (),
-                crate::tasks::TaskError> + Send
+                TaskError> + Send
             >,
-            ::std::option::Option<TaskOptions>
+            Option<TaskOptions>
         ) -> Box<Task<()>>;
 
         fn new_blocking_with_ctx<
             (),
             Box<dyn Fn(
-                &crate::tasks::TaskContext
-            ) -> ::std::result::Result<(), crate::tasks::TaskError> + Send>
+                &TaskContext
+            ) -> Result<(), TaskError> + Send>
         >(
             &self,
             Box<dyn Fn(
-                &crate::tasks::TaskContext
-            ) -> ::std::result::Result<(), crate::tasks::TaskError> + Send>,
-            ::std::option::Option<TaskOptions>,
+                &TaskContext
+            ) -> Result<(), TaskError> + Send>,
+            Option<TaskOptions>,
         ) -> Box<Task<()>>;
 
 
         fn new_blocking<
-            crate::ffi::CxxAny,
-            Box<dyn Fn() -> ::std::result::Result<
-                crate::ffi::CxxAny,
-                crate::tasks::TaskError
+            CxxAny,
+            Box<dyn Fn() -> Result<
+                CxxAny,
+                TaskError
             > + Send>
         >(
             &self,
-            Box<dyn Fn() -> ::std::result::Result<
-                crate::ffi::CxxAny,
-                crate::tasks::TaskError
+            Box<dyn Fn() -> Result<
+                CxxAny,
+                TaskError
             > + Send>,
-            ::std::option::Option<TaskOptions>
-        ) -> Box<Task<crate::ffi::CxxAny>>;
+            Option<TaskOptions>
+        ) -> Box<Task<CxxAny>>;
 
         fn new_blocking_with_ctx<
-            crate::ffi::CxxAny,
+            CxxAny,
             Box<dyn Fn(
-                &crate::tasks::TaskContext
-            ) -> ::std::result::Result<
-                crate::ffi::CxxAny,
-                crate::tasks::TaskError
+                &TaskContext
+            ) -> Result<
+                CxxAny,
+                TaskError
             > + Send>
         >(
             &self,
             Box<dyn Fn(
-                &crate::tasks::TaskContext
-            ) -> ::std::result::Result<
-                crate::ffi::CxxAny,
-                crate::tasks::TaskError
+                &TaskContext
+            ) -> Result<
+                CxxAny,
+                TaskError
             > + Send>,
-            ::std::option::Option<TaskOptions>,
-        ) -> Box<Task<crate::ffi::CxxAny>>;
+            Option<TaskOptions>,
+        ) -> Box<Task<CxxAny>>;
     }
+
 
     type Task<()> {
         #layout(size = 72, align = 8);
-        fn id(&self) -> ::tokio::task::Id;
+
+        fn id(&self) -> TaskId;
         fn manager(&self) -> &TaskManager;
         fn is_finished(&self) -> bool;
         fn is_cancelled(&self) -> bool;
         fn cancel(&self);
         fn on_progress(
             &self,
-            Box<dyn Fn(&crate::tasks::TaskProgress) + Send>
-        ) -> ::std::option::Option<::tokio::task::AbortHandle>;
+            Box<dyn Fn(&TaskProgress) + Send>
+        ) -> Option<::tokio::task::AbortHandle>;
 
         fn then<
             (),
             Box<dyn Fn(
-                ::std::result::Result<(), crate::tasks::TaskError>
-            ) -> ::std::result::Result<(), crate::tasks::TaskError> + Send>
+                Result<(), TaskError>
+            ) -> Result<(), TaskError> + Send>
         > (
             &self,
             Box<dyn Fn(
-                ::std::result::Result<(), crate::tasks::TaskError>
-            ) -> ::std::result::Result<(), crate::tasks::TaskError> + Send>,
-            ::std::option::Option<crate::tasks::TaskOptions>
-        ) -> ::std::result::Result<Box<Task<()>>, TaskSpawnError>;
+                Result<(), TaskError>
+            ) -> Result<(), TaskError> + Send>,
+            Option<TaskOptions>
+        ) -> Result<Box<Task<()>>, TaskSpawnError>;
         
         fn then_with_ctx<
             (),
             Box<dyn Fn(
-                ::std::result::Result<(), crate::tasks::TaskError>,
-                &crate::tasks::TaskContext
-            ) -> ::std::result::Result<(), crate::tasks::TaskError> + Send>
+                Result<(), TaskError>,
+                &TaskContext
+            ) -> Result<(), TaskError> + Send>
         > (
             &self,
             Box<dyn Fn(
-                ::std::result::Result<(), crate::tasks::TaskError>,
-                &crate::tasks::TaskContext
-            ) -> ::std::result::Result<(), crate::tasks::TaskError> + Send>,
-            ::std::option::Option<crate::tasks::TaskOptions>
-        ) -> ::std::result::Result<Box<Task<()>>, TaskSpawnError>;
+                Result<(), TaskError>,
+                &TaskContext
+            ) -> Result<(), TaskError> + Send>,
+            Option<TaskOptions>
+        ) -> Result<Box<Task<()>>, TaskSpawnError>;
 
         fn then<
-            crate::ffi::CxxAny,
+            CxxAny,
             Box<dyn Fn(
-                ::std::result::Result<(), crate::tasks::TaskError>
-            ) -> ::std::result::Result<
-                crate::ffi::CxxAny,
-                crate::tasks::TaskError
+                Result<(), TaskError>
+            ) -> Result<
+                CxxAny,
+                TaskError
             > + Send>
         > (
             &self,
             Box<dyn Fn(
-                ::std::result::Result<(), crate::tasks::TaskError>
-            ) -> ::std::result::Result<
-                crate::ffi::CxxAny,
-                crate::tasks::TaskError
+                Result<(), TaskError>
+            ) -> Result<
+                CxxAny,
+                TaskError
             > + Send>,
-            ::std::option::Option<crate::tasks::TaskOptions>
-        ) -> ::std::result::Result<
-            Box<Task<crate::ffi::CxxAny>>,
+            Option<TaskOptions>
+        ) -> Result<
+            Box<Task<CxxAny>>,
             TaskSpawnError
         >;
 
 
         fn then_with_ctx<
-            crate::ffi::CxxAny,
+            CxxAny,
             Box<dyn Fn(
-                ::std::result::Result<(), crate::tasks::TaskError>,
-                &crate::tasks::TaskContext
-            ) -> ::std::result::Result<
-                crate::ffi::CxxAny,
-                crate::tasks::TaskError
+                Result<(), TaskError>,
+                &TaskContext
+            ) -> Result<
+                CxxAny,
+                TaskError
             > + Send>
         > (
             &self,
             Box<dyn Fn(
-                ::std::result::Result<(), crate::tasks::TaskError>,
-                &crate::tasks::TaskContext
-            ) -> ::std::result::Result<
-                crate::ffi::CxxAny,
-                crate::tasks::TaskError
+                Result<(), TaskError>,
+                &TaskContext
+            ) -> Result<
+                CxxAny,
+                TaskError
             > + Send>,
-            ::std::option::Option<crate::tasks::TaskOptions>
-        ) -> ::std::result::Result<
-            Box<Task<crate::ffi::CxxAny>>,
+            Option<TaskOptions>
+        ) -> Result<
+            Box<Task<CxxAny>>,
             TaskSpawnError
         >;
     }
 
 
-    type Task<crate::ffi::CxxAny> {
+    type Task<CxxAny> {
         #layout(size = 72, align = 8);
-        fn id(&self) -> ::tokio::task::Id;
+        fn id(&self) -> TaskId;
         fn manager(&self) -> &TaskManager;
         fn is_finished(&self) -> bool;
         fn is_cancelled(&self) -> bool;
         fn cancel(&self);
         fn on_progress(
             &self,
-            Box<dyn Fn(&crate::tasks::TaskProgress) + Send>
-        ) -> ::std::option::Option<::tokio::task::AbortHandle>;
+            Box<dyn Fn(&TaskProgress) + Send>
+        ) -> Option<::tokio::task::AbortHandle>;
 
         fn then<
             (),
             Box<dyn Fn(
-                ::std::result::Result<
-                    crate::ffi::CxxAny,
-                    crate::tasks::TaskError
+                Result<
+                    CxxAny,
+                    TaskError
                 >
-            ) -> ::std::result::Result<(), crate::tasks::TaskError> + Send>
+            ) -> Result<(), TaskError> + Send>
         > (
             &self,
             Box<dyn Fn(
-                ::std::result::Result<
-                    crate::ffi::CxxAny,
-                    crate::tasks::TaskError
+                Result<
+                    CxxAny,
+                    TaskError
                 >
-            ) -> ::std::result::Result<(), crate::tasks::TaskError> + Send>,
-            ::std::option::Option<crate::tasks::TaskOptions>
-        ) -> ::std::result::Result<Box<Task<()>>, TaskSpawnError>;
+            ) -> Result<(), TaskError> + Send>,
+            Option<TaskOptions>
+        ) -> Result<Box<Task<()>>, TaskSpawnError>;
         
         fn then_with_ctx<
             (),
             Box<dyn Fn(
-                ::std::result::Result<
-                    crate::ffi::CxxAny,
-                    crate::tasks::TaskError
+                Result<
+                    CxxAny,
+                    TaskError
                 >,
-                &crate::tasks::TaskContext
-            ) -> ::std::result::Result<(), crate::tasks::TaskError> + Send>
+                &TaskContext
+            ) -> Result<(), TaskError> + Send>
         > (
             &self,
             Box<dyn Fn(
-                ::std::result::Result<
-                    crate::ffi::CxxAny,
-                    crate::tasks::TaskError
+                Result<
+                    CxxAny,
+                    TaskError
                 >,
-                &crate::tasks::TaskContext
-            ) -> ::std::result::Result<(), crate::tasks::TaskError> + Send>,
-            ::std::option::Option<crate::tasks::TaskOptions>
-        ) -> ::std::result::Result<Box<Task<()>>, TaskSpawnError>;
+                &TaskContext
+            ) -> Result<(), TaskError> + Send>,
+            Option<TaskOptions>
+        ) -> Result<Box<Task<()>>, TaskSpawnError>;
 
         fn then<
-            crate::ffi::CxxAny,
+            CxxAny,
             Box<dyn Fn(
-                ::std::result::Result<
-                    crate::ffi::CxxAny,
-                    crate::tasks::TaskError
+                Result<
+                    CxxAny,
+                    TaskError
                 >
-            ) -> ::std::result::Result<
-                crate::ffi::CxxAny,
-                crate::tasks::TaskError
+            ) -> Result<
+                CxxAny,
+                TaskError
             > + Send>
         > (
             &self,
             Box<dyn Fn(
-                ::std::result::Result<
-                    crate::ffi::CxxAny,
-                    crate::tasks::TaskError
+                Result<
+                    CxxAny,
+                    TaskError
                 >
-            ) -> ::std::result::Result<
-                crate::ffi::CxxAny,
-                crate::tasks::TaskError
+            ) -> Result<
+                CxxAny,
+                TaskError
             > + Send>,
-            ::std::option::Option<crate::tasks::TaskOptions>
-        ) -> ::std::result::Result<
-            Box<Task<crate::ffi::CxxAny>>,
+            Option<TaskOptions>
+        ) -> Result<
+            Box<Task<CxxAny>>,
             TaskSpawnError
         >;
 
 
         fn then_with_ctx<
-            crate::ffi::CxxAny,
+            CxxAny,
             Box<dyn Fn(
-                ::std::result::Result<
-                    crate::ffi::CxxAny,
-                    crate::tasks::TaskError
+                Result<
+                    CxxAny,
+                    TaskError
                 >,
-                &crate::tasks::TaskContext
-            ) -> ::std::result::Result<
-                crate::ffi::CxxAny,
-                crate::tasks::TaskError
+                &TaskContext
+            ) -> Result<
+                CxxAny,
+                TaskError
             > + Send>
         > (
             &self,
             Box<dyn Fn(
-                ::std::result::Result<
-                    crate::ffi::CxxAny,
-                    crate::tasks::TaskError
+                Result<
+                    CxxAny,
+                    TaskError
                 >,
-                &crate::tasks::TaskContext
-            ) -> ::std::result::Result<
-                crate::ffi::CxxAny,
-                crate::tasks::TaskError
+                &TaskContext
+            ) -> Result<
+                CxxAny,
+                TaskError
             > + Send>,
-            ::std::option::Option<crate::tasks::TaskOptions>
-        ) -> ::std::result::Result<
-            Box<Task<crate::ffi::CxxAny>>,
+            Option<TaskOptions>
+        ) -> Result<
+            Box<Task<CxxAny>>,
             TaskSpawnError
         >;
     }
@@ -504,66 +490,66 @@ mod crate::tasks {
 
 mod ::std {
     mod result {
-        type Result<Box<crate::tasks::Task<()>>, crate::tasks::TaskSpawnError> {
+        type Result<Box<Task<()>>, TaskSpawnError> {
             #layout(size = 24, align = 8);
 
-            constructor Ok(Box<crate::tasks::Task<()>>);
-            constructor Err(crate::tasks::TaskSpawnError);
+            constructor Ok(Box<Task<()>>);
+            constructor Err(TaskSpawnError);
             
             fn is_ok(&self) -> bool;
             fn is_err(&self) -> bool;
-            fn unwrap(self) -> Box<crate::tasks::Task<()>>;
-            fn err(self) -> ::std::option::Option<crate::tasks::TaskSpawnError>;
+            fn unwrap(self) -> Box<Task<()>>;
+            fn err(self) -> Option<TaskSpawnError>;
         }
 
-        type Result<(), crate::tasks::TaskError> {
+        type Result<(), TaskError> {
             #layout(size = 40, align = 8);
 
             constructor Ok(());
-            constructor Err(crate::tasks::TaskError);
+            constructor Err(TaskError);
             
             fn is_ok(&self) -> bool;
             fn is_err(&self) -> bool;
             fn unwrap(self) -> ();
-            fn err(self) -> ::std::option::Option<crate::tasks::TaskError>;
+            fn err(self) -> Option<TaskError>;
         }
 
         type Result<
-            Box<crate::tasks::Task<crate::ffi::CxxAny>>,
-            crate::tasks::TaskSpawnError
+            Box<Task<CxxAny>>,
+            TaskSpawnError
         > {
             #layout(size = 24, align = 8);
 
-            constructor Ok(Box<crate::tasks::Task<crate::ffi::CxxAny>>);
-            constructor Err(crate::tasks::TaskSpawnError);
+            constructor Ok(Box<Task<CxxAny>>);
+            constructor Err(TaskSpawnError);
             
             fn is_ok(&self) -> bool;
             fn is_err(&self) -> bool;
-            fn unwrap(self) -> Box<crate::tasks::Task<crate::ffi::CxxAny>>;
-            fn err(self) -> ::std::option::Option<crate::tasks::TaskSpawnError>;
+            fn unwrap(self) -> Box<Task<CxxAny>>;
+            fn err(self) -> Option<TaskSpawnError>;
         }
 
-        type Result<crate::ffi::CxxAny, crate::tasks::TaskError> {
+        type Result<CxxAny, TaskError> {
             #layout(size = 40, align = 8);
 
-            constructor Ok(crate::ffi::CxxAny);
-            constructor Err(crate::tasks::TaskError);
+            constructor Ok(CxxAny);
+            constructor Err(TaskError);
 
             fn is_ok(&self) -> bool;
             fn is_err(&self) -> bool;
-            fn unwrap(self) -> crate::ffi::CxxAny;
-            fn err(self) -> ::std::option::Option<crate::tasks::TaskError>;
+            fn unwrap(self) -> CxxAny;
+            fn err(self) -> Option<TaskError>;
         }
     }
 }
 
-type Box<crate::tasks::Task<()>> {
+type Box<Task<()>> {
     #layout(size = 8, align = 8);
-    fn as_ref(&self) -> &crate::tasks::Task<()>;
+    fn as_ref(&self) -> &crate::task::Task<()>;
 }
 
-type Box<crate::tasks::Task<crate::ffi::CxxAny>> {
+type Box<Task<CxxAny>> {
     #layout(size = 8, align = 8);
-    fn as_ref(&self) -> &crate::tasks::Task<crate::ffi::CxxAny>;
+    fn as_ref(&self) -> &crate::task::Task<CxxAny>;
 }
 

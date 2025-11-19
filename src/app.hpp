@@ -5,7 +5,7 @@
 #include <QFutureWatcher>
 
 #include "window.hpp"
-#include "tasks-ffi/tasks.hpp"
+#include "task-ffi/task.hpp"
 
 class Application : public QApplication {
     Q_OBJECT
