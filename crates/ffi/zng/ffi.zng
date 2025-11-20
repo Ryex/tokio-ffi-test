@@ -17,7 +17,6 @@ use crate::task::TaskProgress as TaskProgress;
 use crate::task::Task as Task;
 use crate::task::TaskSpawnError as TaskSpawnError;
 use crate::task::FfiError as FfiError;
-use crate::task::ExternalFfiError as ExternalFfiError;
 use crate::task::IoError as IoError;
 
 mod crate::task {
@@ -111,4 +110,19 @@ type crate::ffi::CxxAny {
     constructor(ZngurCppOpaqueOwnedObject);
 
     #cpp_value "0" "::task::ffi::CxxAny";
+}
+
+
+type crate::ffi::CxxException {
+    #layout(size = 16, align = 8);
+
+    constructor(ZngurCppOpaqueOwnedObject);
+
+    #cpp_value "0" "::task::ffi::CxxException";
+}
+
+extern "C++" {
+    impl crate::ffi::CxxException {
+        fn what(&self) -> &str;
+    }
 }

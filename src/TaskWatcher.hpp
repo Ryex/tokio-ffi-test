@@ -1,6 +1,8 @@
 #pragma once
 
 #include <QObject>
+#include <exception>
+#include <mutex>
 #include <optional>
 
 #include "task-ffi/task.hpp"
@@ -13,6 +15,11 @@ struct task_not_succeded_error : public std::runtime_error {
 struct task_not_failed_error : public std::runtime_error {
    public:
     task_not_failed_error() : std::runtime_error("Can not fetch error, Task has not failed.") {};
+};
+
+struct task_not_assigned_error : public std::runtime_error {
+   public:
+    task_not_assigned_error() : std::runtime_error("Can not fetch task id, Task has been assigned.") {};
 };
 
 class TaskWatcherBase : public QObject {
@@ -75,10 +82,12 @@ template <typename T>
 class TaskWatcher : public TaskWatcherBase {
    private:
     std::optional<task::Task<T>> m_task;
-    std::optional<T> m_result;
     std::optional<::task::AbortHandle> m_progress_handle;
     std::optional<::task::Task<void>> m_continuation_handle;
-    std::optional<std::string> m_error;
+
+    mutable std::mutex m_mutex;
+    std::optional<T> m_result;
+    std::optional<task::TaskError> m_error;
 
    public:
     TaskWatcher(QObject* parent = nullptr) : TaskWatcherBase(parent), m_task() {}
@@ -91,14 +100,20 @@ class TaskWatcher : public TaskWatcherBase {
             m_task->on_progress([this](task::RefTaskProgress progress) { this->emitProgress(progress.progress(), progress.maximum()); });
         m_continuation_handle = m_task->then(
             [this](T val) {
-                this->m_result = val;
+                {
+                    std::lock_guard<std::mutex> guard(this->m_mutex);
+                    this->m_result = val;
+                }
                 this->emitTaskSucceded();
             },
-            [this](task::RefTaskError err) {
+            [this](task::TaskError err) {
                 if (err.as_task_canceled().is_some()) {
                     this->emitTaskCanceled();
-                } else {
-                    this->m_error = rust_util::string::to_string(err.to_string());
+                }  else {
+                    {
+                        std::lock_guard<std::mutex> guard(this->m_mutex);
+                        this->m_error = std::move(err);
+                    }
                     this->emitTaskFailed();
                 }
             });
@@ -108,7 +123,13 @@ class TaskWatcher : public TaskWatcherBase {
     bool isFinished() const { return m_task && m_task.isFinished(); }
     bool isCanceled() const { return m_task && m_task.isCanceled(); }
 
-    task::TaskId taskId() const { return m_task->id(); }
+    task::TaskId taskId() const
+    {
+        if (!m_task) {
+            throw task_not_assigned_error();
+        }
+        return m_task->id();
+    }
 
     void cancel() override
     {
@@ -125,14 +146,16 @@ class TaskWatcher : public TaskWatcherBase {
 
     T result() const
     {
+        std::lock_guard<std::mutex> guard(m_mutex);
         if (m_result) {
             return *m_result;
         } else {
             throw task_not_succeded_error();
         }
     }
-    std::string error() const
+    task::TaskError const& error() const
     {
+        std::lock_guard<std::mutex> guard(m_mutex);
         if (m_error) {
             return *m_error;
         } else {
@@ -140,6 +163,15 @@ class TaskWatcher : public TaskWatcherBase {
         }
     }
 
-    std::optional<T> tryResult() const { return m_result; }
-    std::optional<std::string> tryError() const { return m_error; };
+    std::optional<T> tryResult() const
+    {
+        std::lock_guard<std::mutex> guard(m_mutex);
+        return m_result;
+    }
+
+    std::optional<task::TaskError> const& tryError() const
+    {
+        std::lock_guard<std::mutex> guard(m_mutex);
+        return m_error;
+    };
 };

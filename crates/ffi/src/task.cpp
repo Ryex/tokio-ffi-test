@@ -36,7 +36,7 @@ Task<void> TaskManager::newTask(std::function<void(Ref<TaskContext>)> f, std::op
 }
 
 template <>
-Task<void> Task<void>::then(std::function<void()> func, std::function<void(Ref<TaskError>)> fail, std::optional<TaskOptions> options)
+Task<void> Task<void>::then(std::function<void()> func, std::function<void(TaskError)> fail, std::optional<TaskOptions> options)
 {
     auto result = m_task.as_ref().then(BoxDyn<Fn<Result<Unit, TaskError>, Result<Unit, TaskError>>, Send>::make_box(
                                            [func = std::move(func), fail = std::move(fail)](Result<Unit, TaskError> result) {
@@ -55,7 +55,7 @@ Task<void> Task<void>::then(std::function<void()> func, std::function<void(Ref<T
 
 template <>
 Task<void> Task<void>::then(std::function<void(Ref<TaskContext>)> func,
-                            std::function<void(Ref<TaskError>, Ref<TaskContext>)> fail,
+                            std::function<void(TaskError, Ref<TaskContext>)> fail,
                             std::optional<TaskOptions> options)
 {
     auto result = m_task.as_ref().then_with_ctx(

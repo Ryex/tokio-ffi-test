@@ -11,7 +11,6 @@ use crate::task::TaskProgress as TaskProgress;
 use crate::task::Task as Task;
 use crate::task::TaskSpawnError as TaskSpawnError;
 use crate::task::FfiError as FfiError;
-use crate::task::ExternalFfiError as ExternalFfiError;
 use crate::task::IoError as IoError;
 
 use crate::ffi::CxxAny as CxxAny;
@@ -161,11 +160,11 @@ mod std {
             fn expect(self, &str) -> &FfiError;
         }
 
-        type Option<&ExternalFfiError> {
+        type Option<&crate::ffi::CxxException>{
             #layout(size = 8, align = 8);
             fn is_some(&self) -> bool;
-            fn unwrap(self) -> &ExternalFfiError;
-            fn expect(self, &str) -> &ExternalFfiError;
+            fn unwrap(self) -> &crate::ffi::CxxException;
+            fn expect(self, &str) -> &crate::ffi::CxxException;
         }
 
         type Option<&IoError> {
@@ -200,24 +199,16 @@ mod crate::task {
     type FfiError {
         #layout(size = 40, align = 8);
 
-        constructor External(ExternalFfiError);
+        constructor External(crate::ffi::CxxException);
 
         fn to_string(&self) -> String;
 
-        fn as_external(&self) -> Option<&ExternalFfiError>;
+        fn as_external(&self) -> Option<&crate::ffi::CxxException>;
         fn as_io(&self) -> Option<&IoError>;
     }
 
     type IoError {
         #layout(size = 32, align = 8);
-        fn to_string(&self) -> String;
-    }
-
-    type ExternalFfiError {
-        #layout(size = 32, align = 8);
-        
-        fn new(u32, String) -> ExternalFfiError;
-        
         fn to_string(&self) -> String;
     }
 

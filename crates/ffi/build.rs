@@ -20,17 +20,17 @@ fn main() {
 
     let main_zng = check_and_generate_zng(&zng_dir, &out_dir);
 
-    let generated_cpp = out_dir.join("generated.cpp");
-    let generated_h = out_dir.join("generated.h");
+    let generated_cpp = out_dir.join("zngur_generated.cpp");
+    let generated_h = out_dir.join("zngur_generated.h");
     let target_h = crate_dir
         .join("include")
         .join("task-ffi")
-        .join("generated.h");
+        .join("zngur_generated.h");
 
     Zngur::from_zng_file(&main_zng)
         .with_cpp_file(&generated_cpp)
-        .with_h_file(out_dir.join("generated.h"))
-        .with_rs_file(out_dir.join("generated.rs"))
+        .with_h_file(out_dir.join("zngur_generated.h"))
+        .with_rs_file(out_dir.join("zngur_generated.rs"))
         .generate();
 
     println!("copying {generated_h:?} to {target_h:?}");
@@ -49,12 +49,12 @@ fn main() {
     let build = || build.clone();
     // file may not exist if zngur determines it's not needed
 
-    let headers = ["include/task-ffi/task.hpp", "include/task-ffi/types.hpp"];
+    let headers = ["include/task-ffi/task.hpp", "include/task-ffi/types.hpp", "include/task-ffi/util.hpp"];
     for header in &headers {
         build_rs::output::rerun_if_changed(header);
     }
 
-    let sources: Vec<&str> = vec!["src/task.cpp"];
+    let sources: Vec<&str> = vec!["src/task.cpp", "src/impl.cpp"];
 
     let mut taskffi = build();
     taskffi.files(&sources);

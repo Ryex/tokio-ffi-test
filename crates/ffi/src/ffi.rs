@@ -4,8 +4,22 @@ mod generated {
 }
 
 pub struct CxxAny(generated::ZngurCppOpaqueOwnedObject);
+pub struct CxxException(generated::ZngurCppOpaqueOwnedObject);
 
 unsafe impl Send for CxxAny {}
+unsafe impl Send for CxxException {}
+
+impl std::fmt::Debug for CxxException {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "CxxException {{ msg: {:?} }}", self.what())
+    }
+}
+
+impl std::fmt::Display for CxxException {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.what())
+    }
+}
 
 /// ffi helper for iterator size hints
 pub trait SizeHintExt {

@@ -1,84 +1,16 @@
 #pragma once
 
-#include "generated.h"
 #include "types.hpp"
+#include "util.hpp"
+#include "zngur_generated.h"
 
 #include <cstdlib>
+#include <exception>
 #include <functional>
 #include <optional>
 #include <stdexcept>
 #include <string>
-#include <string_view>
 #include <vector>
-
-namespace rust_util {
-
-namespace str {
-inline rust::Ref<rust::Str> from_c_str(const char* input)
-{
-    return rust::std::ffi::CStr::from_ptr(reinterpret_cast<const int8_t*>(input)).to_str().expect("invalid_utf8"_rs);
-}
-}  // namespace str
-
-namespace string {
-
-template <typename T>
-inline std::string to_string(T);
-
-template <typename T>
-inline std::string_view to_string_view(T);
-
-template <>
-inline std::string to_string(rust::Ref<rust::Str> str)
-{
-    return std::string(reinterpret_cast<const char*>(str.as_ptr()), str.len());
-}
-
-template <>
-inline std::string_view to_string_view(rust::Ref<rust::Str> str)
-{
-    return std::string_view(reinterpret_cast<const char*>(str.as_ptr()), str.len());
-}
-
-template <>
-inline std::string to_string(rust::Ref<rust::std::string::String> str)
-{
-    return std::string(reinterpret_cast<const char*>(str.as_str().as_ptr()), str.len());
-}
-
-template <>
-inline std::string_view to_string_view(rust::Ref<rust::std::string::String> str)
-{
-    return std::string_view(reinterpret_cast<const char*>(str.as_str().as_ptr()), str.len());
-}
-
-template <>
-inline std::string to_string(rust::std::string::String& str)
-{
-    return std::string(reinterpret_cast<const char*>(str.as_str().as_ptr()), str.len());
-}
-
-template <>
-inline std::string_view to_string_view(rust::std::string::String& str)
-{
-    return std::string_view(reinterpret_cast<const char*>(str.as_str().as_ptr()), str.len());
-}
-
-template <>
-inline std::string to_string(rust::std::string::String str)
-{
-    return std::string(reinterpret_cast<const char*>(str.as_str().as_ptr()), str.len());
-}
-
-template <>
-inline std::string_view to_string_view(rust::std::string::String str)
-{
-    return std::string_view(reinterpret_cast<const char*>(str.as_str().as_ptr()), str.len());
-}
-
-}  // namespace string
-
-}  // namespace rust_util
 
 namespace task {
 
@@ -113,7 +45,6 @@ using BoxDyn = Box<Dyn<T...>>;
 using RustCxxAny = rust::crate::ffi::CxxAny;
 
 using TaskError = rust::crate::task::TaskError;
-using RefTaskError = Ref<TaskError>;
 
 using TaskSpawnError = rust::crate::task::TaskSpawnError;
 
@@ -127,7 +58,6 @@ using RefTaskProgress = Ref<TaskProgress>;
 
 using RustTaskOptions = rust::crate::task::TaskOptions;
 using FfiError = rust::crate::task::FfiError;
-using ExternalFfiError = rust::crate::task::ExternalFfiError;
 using FfiAbortHandle = rust::tokio::task::AbortHandle;
 using TokioId = rust::tokio::task::Id;
 using TaskId = rust::crate::task::TaskId;
@@ -174,15 +104,15 @@ class Task {
 
    public:
     template <typename T2>
-    Task<T2> then(std::function<T2(T)> func, std::function<T2(RefTaskError)> fail, std::optional<TaskOptions> options = std::nullopt);
+    Task<T2> then(std::function<T2(T)> func, std::function<T2(TaskError)> fail, std::optional<TaskOptions> options = std::nullopt);
     template <typename T2>
     Task<T2> then(std::function<T2(T, RefTaskContext)> func,
-                  std::function<T2(RefTaskError, RefTaskContext)> fail,
+                  std::function<T2(TaskError, RefTaskContext)> fail,
                   std::optional<TaskOptions> options = std::nullopt);
 
-    Task<void> then(std::function<void(T)> func, std::function<void(RefTaskError)> fail, std::optional<TaskOptions> options = std::nullopt);
+    Task<void> then(std::function<void(T)> func, std::function<void(TaskError)> fail, std::optional<TaskOptions> options = std::nullopt);
     Task<void> then(std::function<void(T, RefTaskContext)> func,
-                    std::function<void(RefTaskError, RefTaskContext)> fail,
+                    std::function<void(TaskError, RefTaskContext)> fail,
                     std::optional<TaskOptions> options = std::nullopt);
 
     AbortHandle on_progress(std::function<void(Ref<TaskProgress>)>) const;
@@ -208,15 +138,15 @@ class Task<void> {
 
    public:
     template <typename T2>
-    Task<T2> then(std::function<T2()> func, std::function<T2(RefTaskError)> fail, std::optional<TaskOptions> options = std::nullopt);
+    Task<T2> then(std::function<T2()> func, std::function<T2(TaskError)> fail, std::optional<TaskOptions> options = std::nullopt);
     template <typename T2>
     Task<T2> then(std::function<T2(RefTaskContext)> func,
-                  std::function<T2(RefTaskError, RefTaskContext)> fail,
+                  std::function<T2(TaskError, RefTaskContext)> fail,
                   std::optional<TaskOptions> options = std::nullopt);
 
-    Task<void> then(std::function<void()> func, std::function<void(RefTaskError)> fail, std::optional<TaskOptions> options = std::nullopt);
+    Task<void> then(std::function<void()> func, std::function<void(TaskError)> fail, std::optional<TaskOptions> options = std::nullopt);
     Task<void> then(std::function<void(RefTaskContext)> func,
-                    std::function<void(RefTaskError, RefTaskContext)> fail,
+                    std::function<void(TaskError, RefTaskContext)> fail,
                     std::optional<TaskOptions> options = std::nullopt);
 
     AbortHandle on_progress(std::function<void(Ref<TaskProgress>)>) const;
@@ -249,11 +179,11 @@ inline Option<RustTaskOptions> transform_options_ffi(std::optional<task::TaskOpt
         auto opts = options.value();
         auto ropts = RustTaskOptions::new_();
         if (opts.name.has_value()) {
-            ropts.set_name(Option<String>::Some(rust_util::str::from_c_str(opts.name.value().c_str()).to_owned()));
+            ropts.set_name(Option<String>::Some(rust_util::to_rust_str(opts.name.value().c_str()).to_owned()));
         }
         auto tags = ropts.tags_mut();
         for (auto& tag : opts.tags) {
-            tags.insert(rust_util::str::from_c_str(tag.c_str()).to_owned());
+            tags.insert(rust_util::to_rust_str(tag.c_str()).to_owned());
         }
     }
     return rust_opts;
@@ -267,7 +197,10 @@ inline Result<RustCxxAny, TaskError> trycatch_any(Try&& func, Args&&... args)
             RustCxxAny(rust::ZngurCppOpaqueOwnedObject::build<task::ffi::CxxAny>(func(std::forward<Args>(args)...))));
     } catch (const ::std::exception& e) {
         return Result<RustCxxAny, TaskError>::Err(
-            TaskError::Error(FfiError::External(ExternalFfiError::new_(2, rust_util::str::from_c_str(e.what()).to_string()))));
+            TaskError::Error(FfiError::External(rust::ZngurCppOpaqueOwnedObject::build<task::ffi::CxxException>(e))));
+    } catch (...) {
+        return Result<RustCxxAny, TaskError>::Err(TaskError::Error(
+            FfiError::External(rust::ZngurCppOpaqueOwnedObject::build<task::ffi::CxxException>(std::current_exception()))));
     }
 }
 
@@ -279,7 +212,10 @@ inline Result<Unit, TaskError> trycatch_unit(Try&& func, Args&&... args)
         return Result<Unit, TaskError>::Ok(Unit());
     } catch (const ::std::exception& e) {
         return Result<Unit, TaskError>::Err(
-            TaskError::Error(FfiError::External(ExternalFfiError::new_(2, rust_util::str::from_c_str(e.what()).to_string()))));
+            TaskError::Error(FfiError::External(rust::ZngurCppOpaqueOwnedObject::build<task::ffi::CxxException>(e))));
+    } catch (...) {
+        return Result<Unit, TaskError>::Err(TaskError::Error(
+            FfiError::External(rust::ZngurCppOpaqueOwnedObject::build<task::ffi::CxxException>(std::current_exception()))));
     }
 }
 
@@ -305,7 +241,7 @@ Task<void> TaskManager::newTask(std::function<void(Ref<TaskContext>)> f, std::op
 
 template <typename T>
 template <typename T2>
-Task<T2> Task<T>::then(std::function<T2(T)> func, std::function<T2(Ref<TaskError>)> fail, std::optional<TaskOptions> options)
+Task<T2> Task<T>::then(std::function<T2(T)> func, std::function<T2(TaskError)> fail, std::optional<TaskOptions> options)
 {
     auto result = m_task.as_ref().then(BoxDyn<Fn<Result<RustCxxAny, TaskError>, Result<RustCxxAny, TaskError>>, Send>::make_box(
                                            [func = std::move(func), fail = std::move(fail)](Result<RustCxxAny, TaskError> result) {
@@ -325,7 +261,7 @@ Task<T2> Task<T>::then(std::function<T2(T)> func, std::function<T2(Ref<TaskError
 template <typename T>
 template <typename T2>
 Task<T2> Task<T>::then(std::function<T2(T, Ref<TaskContext>)> func,
-                       std::function<T2(Ref<TaskError>, Ref<TaskContext>)> fail,
+                       std::function<T2(TaskError, Ref<TaskContext>)> fail,
                        std::optional<TaskOptions> options)
 {
     auto result = m_task.as_ref().then_with_ctx(
@@ -345,7 +281,7 @@ Task<T2> Task<T>::then(std::function<T2(T, Ref<TaskContext>)> func,
 }
 
 template <typename T>
-Task<void> Task<T>::then(std::function<void(T)> func, std::function<void(Ref<TaskError>)> fail, std::optional<TaskOptions> options)
+Task<void> Task<T>::then(std::function<void(T)> func, std::function<void(TaskError)> fail, std::optional<TaskOptions> options)
 {
     auto result = m_task.as_ref().then(BoxDyn<Fn<Result<RustCxxAny, TaskError>, Result<Unit, TaskError>>, Send>::make_box(
                                            [func = std::move(func), fail = std::move(fail)](Result<RustCxxAny, TaskError> result) {
@@ -364,7 +300,7 @@ Task<void> Task<T>::then(std::function<void(T)> func, std::function<void(Ref<Tas
 }
 template <typename T>
 Task<void> Task<T>::then(std::function<void(T, Ref<TaskContext>)> func,
-                         std::function<void(Ref<TaskError>, Ref<TaskContext>)> fail,
+                         std::function<void(TaskError, Ref<TaskContext>)> fail,
                          std::optional<TaskOptions> options)
 {
     auto result = m_task.as_ref().then_with_ctx(
@@ -384,7 +320,7 @@ Task<void> Task<T>::then(std::function<void(T, Ref<TaskContext>)> func,
 }
 
 template <typename T2>
-Task<T2> Task<void>::then(std::function<T2()> func, std::function<T2(Ref<TaskError>)> fail, std::optional<TaskOptions> options)
+Task<T2> Task<void>::then(std::function<T2()> func, std::function<T2(TaskError)> fail, std::optional<TaskOptions> options)
 {
     auto result = m_task.as_ref().then(BoxDyn<Fn<Result<Unit, TaskError>, Result<RustCxxAny, TaskError>>, Send>::make_box(
                                            [func = std::move(func), fail = std::move(fail)](Result<Unit, TaskError> result) {
@@ -403,7 +339,7 @@ Task<T2> Task<void>::then(std::function<T2()> func, std::function<T2(Ref<TaskErr
 
 template <typename T2>
 Task<T2> Task<void>::then(std::function<T2(Ref<TaskContext>)> func,
-                          std::function<T2(Ref<TaskError>, Ref<TaskContext>)> fail,
+                          std::function<T2(TaskError, Ref<TaskContext>)> fail,
                           std::optional<TaskOptions> options)
 {
     auto result = m_task.as_ref().then_with_ctx(
@@ -423,11 +359,11 @@ Task<T2> Task<void>::then(std::function<T2(Ref<TaskContext>)> func,
 }
 
 template <>
-Task<void> Task<void>::then(std::function<void()> func, std::function<void(Ref<TaskError>)> fail, std::optional<TaskOptions> options);
+Task<void> Task<void>::then(std::function<void()> func, std::function<void(TaskError)> fail, std::optional<TaskOptions> options);
 
 template <>
 Task<void> Task<void>::then(std::function<void(Ref<TaskContext>)> func,
-                            std::function<void(Ref<TaskError>, Ref<TaskContext>)> fail,
+                            std::function<void(TaskError, Ref<TaskContext>)> fail,
                             std::optional<TaskOptions> options);
 
 template <typename T>

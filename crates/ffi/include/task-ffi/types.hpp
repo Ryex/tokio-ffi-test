@@ -1,10 +1,39 @@
 #pragma once
 
+#include <exception>
 #include <memory>
+#include <string>
 
 namespace task {
 namespace ffi {
 
+/**
+ * @class CxxException
+ * @brief Holds an [std::exception_ptr] refrencing an exception that was passed over the Rust boundry.
+ *
+ * use [std::rethrow_exception] inside a try_catch block to properly handle the Exception
+ *
+ */
+struct CxxException {
+   private:
+    std::string m_msg;
+    std::exception_ptr m_err;
+
+   public:
+    CxxException(std::exception_ptr eptr) : m_msg("Unknown Error"), m_err(eptr) {}
+    CxxException(const std::exception& err) : m_msg(err.what()), m_err(std::make_exception_ptr(err)) {}
+
+    std::exception_ptr exception() const { return m_err; }
+    std::string_view what() const { return m_msg; }
+};
+
+/**
+ * @class CxxAny
+ * @brief Holds an arbitrary value to pass through the Rust/C++ boundry.
+ *
+ * use [CxxAny::cast] or [CxxAny::rcast] to retrieve the value.
+ *
+ */
 struct CxxAny {
    public:
     CxxAny(const CxxAny& trait) = default;

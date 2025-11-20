@@ -1,7 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     ffi::OsString,
-    fmt::Display,
+    fmt::{Debug, Display},
     io,
     num::NonZeroU64,
     sync::{
@@ -16,6 +16,8 @@ use tokio::{
     sync::watch::{Receiver, Sender},
     task::{AbortHandle, JoinHandle},
 };
+
+use crate::ffi::CxxException;
 
 #[derive(Clone, Copy, Debug, Hash, Eq, PartialEq, PartialOrd, Ord)]
 pub struct TaskId(pub(crate) NonZeroU64);
@@ -123,7 +125,7 @@ pub mod current {
 
 impl std::fmt::Display for TaskId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
+        Display::fmt(&self.0, f)
     }
 }
 
@@ -154,12 +156,12 @@ pub enum FfiError {
     CreateFile(IoError),
     #[error("error writing to file '{:?}' : {}", .0.path, .0.error)]
     FileWrite(IoError),
-    #[error("Error {}: {}", .0.code, .0.error)]
-    External(ExternalFfiError),
+    #[error("Error {}", .0.what())]
+    External(crate::ffi::CxxException),
 }
 
 impl FfiError {
-    pub fn as_external(&self) -> Option<&ExternalFfiError> {
+    pub fn as_external(&self) -> Option<&crate::ffi::CxxException> {
         if let Self::External(external) = &self {
             Some(external)
         } else {
@@ -192,28 +194,6 @@ impl IoError {
 }
 
 impl Display for IoError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.error)
-    }
-}
-
-#[derive(Error, Debug)]
-pub struct ExternalFfiError {
-    code: u32,
-    error: String,
-}
-
-impl ExternalFfiError {
-    pub fn new(code: u32, error: String) -> Self {
-        ExternalFfiError { code, error }
-    }
-
-    pub fn code(&self) -> u32 {
-        self.code
-    }
-}
-
-impl Display for ExternalFfiError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.error)
     }
