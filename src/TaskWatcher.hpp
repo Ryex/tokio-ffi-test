@@ -1,20 +1,21 @@
 #pragma once
 
 #include <QObject>
-#include <exception>
 #include <mutex>
 #include <optional>
 
+#include <QDebug>
+
 #include "task-ffi/task.hpp"
 
-struct task_not_succeded_error : public std::runtime_error {
+struct task_not_finished_error : public std::runtime_error {
    public:
-    task_not_succeded_error() : std::runtime_error("Can not fetch result, Task has not finished.") {};
+    task_not_finished_error() : std::runtime_error("Can not fetch result, Task has not finished.") {};
 };
 
-struct task_not_failed_error : public std::runtime_error {
+struct task_result_moved : public std::runtime_error {
    public:
-    task_not_failed_error() : std::runtime_error("Can not fetch error, Task has not failed.") {};
+    task_result_moved() : std::runtime_error("Can not fetch result, Result already moved.") {};
 };
 
 struct task_not_assigned_error : public std::runtime_error {
@@ -30,10 +31,7 @@ class TaskWatcherBase : public QObject {
 
    signals:
 
-    void taskSucceded() const;
-    void taskFailed() const;
     void taskFinished() const;
-    void taskCanceled() const;
     void progressChanged(uint64_t progress, uint64_t maximum) const;
 
    public slots:
@@ -41,9 +39,7 @@ class TaskWatcherBase : public QObject {
 
    protected:
     void emitProgress(uint64_t progress, uint64_t maximum) const;
-    void emitTaskSucceded() const;
-    void emitTaskFailed() const;
-    void emitTaskCanceled() const;
+    void emitTaskFinished() const;
 };
 
 class TaskProgressWatcher : public QObject {
@@ -86,37 +82,41 @@ class TaskWatcher : public TaskWatcherBase {
     std::optional<::task::Task<void>> m_continuation_handle;
 
     mutable std::mutex m_mutex;
-    std::optional<T> m_result;
-    std::optional<task::TaskError> m_error;
+    mutable bool m_result_taken;
+    std::optional<task::TaskResult<T>> m_result;
 
    public:
-    TaskWatcher(QObject* parent = nullptr) : TaskWatcherBase(parent), m_task() {}
-    TaskWatcher(task::Task<T>&& task, QObject* parent = nullptr) : TaskWatcherBase(parent), m_task() { setTask(std::move(task)); }
+    TaskWatcher(QObject* parent = nullptr)
+        : TaskWatcherBase(parent), m_task(std::nullopt), m_result(std::nullopt), m_continuation_handle(std::nullopt), m_result_taken(false)
+    {}
+    TaskWatcher(task::Task<T>&& task, QObject* parent = nullptr)
+        : TaskWatcherBase(parent)
+        , m_task(std::move(task))
+        , m_result(std::nullopt)
+        , m_continuation_handle(std::nullopt)
+        , m_result_taken(false)
+    {
+        setUpTask();
+    }
+
+    void setUpTask()
+    {
+        m_progress_handle =
+            m_task->on_progress([this](task::RefTaskProgress progress) { this->emitProgress(progress.progress(), progress.maximum()); });
+        m_continuation_handle = m_task->then([this](task::TaskResult<T> result) {
+            {
+                std::lock_guard<std::mutex> guard(this->m_mutex);
+                this->m_result = std::move(result);
+                this->m_result_taken = false;
+            }
+            this->emitTaskFinished();
+        });
+    }
 
     void setTask(task::Task<T>&& task)
     {
-        m_task = std::optional(std::move(task));
-        m_progress_handle =
-            m_task->on_progress([this](task::RefTaskProgress progress) { this->emitProgress(progress.progress(), progress.maximum()); });
-        m_continuation_handle = m_task->then(
-            [this](T val) {
-                {
-                    std::lock_guard<std::mutex> guard(this->m_mutex);
-                    this->m_result = val;
-                }
-                this->emitTaskSucceded();
-            },
-            [this](task::TaskError err) {
-                if (err.as_task_canceled().is_some()) {
-                    this->emitTaskCanceled();
-                }  else {
-                    {
-                        std::lock_guard<std::mutex> guard(this->m_mutex);
-                        this->m_error = std::move(err);
-                    }
-                    this->emitTaskFailed();
-                }
-            });
+        m_task = std::move(task);
+        setUpTask();
     }
 
     bool isRunning() const { return m_task && !m_task.isFinished(); }
@@ -144,34 +144,16 @@ class TaskWatcher : public TaskWatcherBase {
         }
     };
 
-    T result() const
+    task::TaskResult<T> result()
     {
         std::lock_guard<std::mutex> guard(m_mutex);
-        if (m_result) {
-            return *m_result;
+        if (m_result && !m_result_taken) {
+            m_result_taken = true;
+            return *std::exchange(m_result, std::nullopt);    
+        } else if (m_result_taken) {
+            throw task_result_moved();
         } else {
-            throw task_not_succeded_error();
+            throw task_not_finished_error();
         }
     }
-    task::TaskError const& error() const
-    {
-        std::lock_guard<std::mutex> guard(m_mutex);
-        if (m_error) {
-            return *m_error;
-        } else {
-            throw task_not_failed_error();
-        }
-    }
-
-    std::optional<T> tryResult() const
-    {
-        std::lock_guard<std::mutex> guard(m_mutex);
-        return m_result;
-    }
-
-    std::optional<task::TaskError> const& tryError() const
-    {
-        std::lock_guard<std::mutex> guard(m_mutex);
-        return m_error;
-    };
 };

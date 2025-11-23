@@ -277,7 +277,7 @@ mod crate::task {
 
 
     type Task<()> {
-        #layout(size = 72, align = 8);
+        #layout(size = 80, align = 8);
 
         fn id(&self) -> TaskId;
         fn manager(&self) -> &TaskManager;
@@ -367,7 +367,7 @@ mod crate::task {
 
 
     type Task<CxxAny> {
-        #layout(size = 72, align = 8);
+        #layout(size = 80, align = 8);
         fn id(&self) -> TaskId;
         fn manager(&self) -> &TaskManager;
         fn is_finished(&self) -> bool;

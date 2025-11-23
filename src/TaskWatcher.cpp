@@ -8,22 +8,10 @@ void TaskWatcherBase::emitProgress(uint64_t progress, uint64_t maximum) const
     emit progressChanged(progress, maximum);
 }
 
-void TaskWatcherBase::emitTaskSucceded() const
+void TaskWatcherBase::emitTaskFinished() const
 {
-    emit taskSucceded();
     emit taskFinished();
 }
-void TaskWatcherBase::emitTaskFailed() const
-{
-    emit taskFailed();
-    emit taskFinished();
-}
-void TaskWatcherBase::emitTaskCanceled() const
-{
-    emit taskCanceled();
-    emit taskFinished();
-}
-
 
 void TaskProgressWatcher::cancel()
 {

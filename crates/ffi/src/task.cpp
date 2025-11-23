@@ -1,4 +1,5 @@
 #include "task-ffi/task.hpp"
+#include <algorithm>
 
 namespace task {
 
@@ -16,7 +17,15 @@ void AbortHandle::abort()
     }
 }
 
+// -------------------------------------
+// Task Manager creation
+// -------------------------------------
+
 TaskManager::TaskManager() : m_manager(rust::crate::task::TaskManager::new_()) {}
+
+// -------------------------------------
+// Task creation
+// -------------------------------------
 
 Task<void>::Task(FfiTaskVoid&& task) : m_task(std::move(task)) {}
 
@@ -35,17 +44,19 @@ Task<void> TaskManager::newTask(std::function<void(Ref<TaskContext>)> f, std::op
                                                       transform_options_ffi(options)));
 }
 
+// -------------------------------------
+// Task Continuation Specialisations
+// -------------------------------------
+
+// void Specialisation
 template <>
-Task<void> Task<void>::then(std::function<void()> func, std::function<void(TaskError)> fail, std::optional<TaskOptions> options)
+Task<void> Task<void>::then(std::function<void(TaskResult<void>)> func, std::optional<TaskOptions> options)
 {
-    auto result = m_task.as_ref().then(BoxDyn<Fn<Result<Unit, TaskError>, Result<Unit, TaskError>>, Send>::make_box(
-                                           [func = std::move(func), fail = std::move(fail)](Result<Unit, TaskError> result) {
-                                               if (result.is_ok()) {
-                                                   return trycatch_unit(func);
-                                               } else {
-                                                   return trycatch_unit(fail, result.err().unwrap());
-                                               }
-                                           }),
+    auto result = m_task.as_ref().then(TaskContFn<Unit, Unit>::make_box([func = std::move(func)](Result<Unit, TaskError> result) {
+                                           auto task_result = TaskResult<void>(std::move(result));
+
+                                           return trycatch_unit(func, std::move(task_result));
+                                       }),
                                        transform_options_ffi(options));
     if (result.is_err()) {
         throw task_spawn_error(result.err().unwrap());
@@ -54,20 +65,16 @@ Task<void> Task<void>::then(std::function<void()> func, std::function<void(TaskE
 }
 
 template <>
-Task<void> Task<void>::then(std::function<void(Ref<TaskContext>)> func,
-                            std::function<void(TaskError, Ref<TaskContext>)> fail,
-                            std::optional<TaskOptions> options)
+Task<void> Task<void>::then(std::function<void(TaskResult<void>, Ref<TaskContext>)> func, std::optional<TaskOptions> options)
 {
-    auto result = m_task.as_ref().then_with_ctx(
-        BoxDyn<Fn<Result<Unit, TaskError>, Ref<TaskContext>, Result<Unit, TaskError>>, Send>::make_box(
-            [func = std::move(func), fail = std::move(fail)](Result<Unit, TaskError> result, Ref<TaskContext> ctx) {
-                if (result.is_ok()) {
-                    return trycatch_unit(func, ctx);
-                } else {
-                    return trycatch_unit(fail, result.err().unwrap(), ctx);
-                }
-            }),
-        transform_options_ffi(options));
+    auto result = m_task.as_ref().then_with_ctx(TaskContCtxFn<Unit, Unit>::make_box(
+
+                                                    [func = std::move(func)](Result<Unit, TaskError> result, Ref<TaskContext> ctx) {
+                                                        auto task_result = TaskResult<void>(std::move(result));
+
+                                                        return trycatch_unit(func, std::move(task_result), ctx);
+                                                    }),
+                                                transform_options_ffi(options));
 
     if (result.is_err()) {
         throw task_spawn_error(result.err().unwrap());

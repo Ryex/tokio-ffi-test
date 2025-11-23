@@ -1,23 +1,18 @@
+
 #pragma once
 
+#include "generated.h"
 #include "types.hpp"
 #include "util.hpp"
-#include "zngur_generated.h"
 
 #include <cstdlib>
 #include <exception>
 #include <functional>
 #include <optional>
 #include <stdexcept>
-#include <string>
-#include <vector>
+#include <type_traits>
 
 namespace task {
-
-struct TaskOptions {
-    std::optional<std::string> name;
-    std::vector<std::string> tags;
-};
 
 using rust::Bool;
 using rust::Send;
@@ -62,6 +57,15 @@ using FfiAbortHandle = rust::tokio::task::AbortHandle;
 using TokioId = rust::tokio::task::Id;
 using TaskId = rust::crate::task::TaskId;
 
+template <typename T, typename U>
+using TaskContFn = BoxDyn<Fn<Result<T, TaskError>, Result<U, TaskError>>, Send>;
+
+template <typename T, typename U>
+using TaskContCtxFn = BoxDyn<Fn<Result<T, TaskError>, Ref<TaskContext>, Result<U, TaskError>>, Send>;
+
+template <typename T>
+using InspectFn = BoxDyn<Fn<Ref<T>, Unit>>;
+
 namespace current {
 
 inline TaskId id()
@@ -75,6 +79,266 @@ inline Option<TaskId> try_id()
 
 }  // namespace current
 
+/**
+ * @class TaskOptions
+ * @brief Options to swpan a task with (name and tag list)
+ *
+ */
+class TaskOptions {
+   private:
+    RustTaskOptions m_opts;
+
+   public:
+    TaskOptions() : m_opts(RustTaskOptions::new_()) {}
+
+    /**
+     * @brief Add a name to the task
+     *
+     * @tparam T A type convertable to a rust string via ['rust_util::to_rust_string']
+     * @param name The name to add to the task
+     * @return The moved TaskOptions
+     */
+    template <typename T>
+    TaskOptions&& withName(T name) &&
+    {
+        m_opts.with_name(rust_util::to_rust_string(name));
+        return std::move(*this);
+    }
+
+    /**
+     * @brief Add tags to the task
+     *
+     * @tparam T A type with a `const_iterator` over a type convertable to a rust string via
+     * ['rust_util::to_rust_string']
+     * @param tags A collection of tags to add to the task
+     * @return The moved TaskOptions
+     */
+    template <typename T>
+    TaskOptions&& withTags(T tags) &&
+    {
+        using IterT = typename std::iterator_traits<typename T::const_iterator>::value_type;
+        m_opts.set_tags(BoxDyn<rust::std::iter::Iterator<String>>::make_box<
+                        rust_util::collection::MappingIterator<IterT, String, typename T::const_iterator>>(
+            tags.cbegin(), tags.cend(), [](IterT str) { return rust_util::to_rust_string(str); }));
+        return std::move(*this);
+    }
+
+    /**
+     * @brief Take the contained RustTaskOptions moving it out of the TaskOptions
+     * object is unusable after
+     *
+     * @return The inner RustTaskOptions
+     */
+    RustTaskOptions&& take() && { return std::move(m_opts); }
+};
+
+/**
+ * @brief The return result of a Task. Wrapps an innner rust Result<T, TaskError>
+ *
+ * @tparam T Task return type
+ */
+template <typename T>
+class TaskResult {
+   private:
+    Result<RustCxxAny, TaskError> m_result;
+
+    TaskResult(T&& value)
+        : m_result(
+              Result<RustCxxAny, TaskError>::Ok(RustCxxAny(rust::ZngurCppOpaqueOwnedObject::build<task::ffi::CxxAny>(std::move(value)))))
+    {}
+    TaskResult(TaskError&& err) : m_result(Result<RustCxxAny, TaskError>::Err(std::move(err))) {}
+
+   public:
+    /**
+     * @brief Wrap a Rust Task Result
+     *
+     * @param result Result<T, TaskError> to wrap
+     */
+    TaskResult(Result<RustCxxAny, TaskError>&& result) : m_result(std::move(result)) {}
+    /**
+     * @brief Construct a Ok Task Result
+     *
+     * @param value Ok value
+     * @return TaskResult
+     */
+    static inline TaskResult<T> Ok(T&& value) { return TaskResult(std::move(value)); }
+    /**
+     * @brief Construct an Err Task Result
+     *
+     * @param error Err value
+     * @return Task Result
+     */
+    static inline TaskResult<T> Err(TaskError&& error) { return TaskResult(std::move(error)); }
+
+    /**
+     * @brief Returns true if the result is Ok
+     *
+     * @return result is Ok variant
+     */
+    inline bool isOk() { return m_result.is_ok(); }
+
+    /**
+     * @brief retursn true if the result is Err
+     *
+     * @returnresult is Err variant
+     */
+    inline bool isErr() { return m_result.is_err(); }
+
+    /**
+     * @brief unwraps the inner result T, will panic rust if Result is an error.
+     *
+     * @return the Task result value
+     */
+    inline T unwrap() && { return m_result.expect("TaskResult is not Ok"_rs).cpp().take<T>(); }
+
+    /**
+     * @brief Unwraps the inner retult error, will panic rust if Result is a value.
+     *
+     * @return the Task error value
+     */
+    inline TaskError unwrapErr() && { return m_result.unwrap_err(); }
+
+    /**
+     * @brief calls a function with a refrence to contained value if `Ok`
+     *
+     * @param func function to call
+     * @return the unmodified Result which rust has moved
+     */
+    inline TaskResult<T> inspect(std::function<void(const T&)> func) &&
+    {
+        return m_result.inspect(InspectFn<RustCxxAny>::make_box([func = std::move(func)](Ref<RustCxxAny> value) {
+            func(value.cpp().rcast<T>());
+            return Unit{};
+        }));
+    }
+
+    /**
+     * @brief calls a function with a refrence to the contained value if `Err`
+     *
+     * @param func function to call
+     * @return the unmodified REsult which rust has moved
+     */
+    inline TaskResult<T> inspectErr(std::function<void(Ref<TaskError>)> func) &&
+    {
+        return m_result.inspect_err(InspectFn<TaskError>::make_box([func = std::move(func)](Ref<TaskError> error) {
+            func(error);
+            return Unit{};
+        }));
+    }
+
+    /**
+     * @brief A std::visit analog for TaskResult. calls `okFunc`
+     * with the unwrapped `T` return value  of the task if the Result is Ok
+     * otherwise calls `errFunc` witht he unwrapped `Err` value
+     *
+     * @tparam U Rerturn type of the passed functions
+     * @param okFunc function to call on Ok value
+     * @param errFunc function to call on Err value
+     * @return return value of `okFunc` or `errFunc`
+     */
+    template <typename U>
+    inline U visit(std::function<U(T)> okFunc, std::function<U(TaskError)> errFunc) &&
+    {
+        if (m_result.is_ok()) {
+            return okFunc(std::move(m_result.unwrap_unchecked().cpp()).take<T>());
+        } else {
+            return errFunc(m_result.unwrap_err_unchecked());
+        }
+    }
+};
+
+template <>
+class TaskResult<void> {
+   private:
+    Result<Unit, TaskError> m_result;
+
+    TaskResult() : m_result(Result<Unit, TaskError>::Ok(Unit{})) {}
+    TaskResult(TaskError&& error) : m_result(Result<Unit, TaskError>::Err(std::move(error))) {}
+
+   public:
+    /**
+     * @brief Wrap a Rust Task Result
+     *
+     * @param result Result<void, TaskError> to wrap
+     */
+    TaskResult(Result<Unit, TaskError>&& result) : m_result(std::move(result)) {}
+
+    /**
+     * @brief Construct a Ok Task Result
+     *
+     * @return TaskResult
+     */
+    static inline TaskResult<void> Ok() { return TaskResult(); }
+
+    /**
+     * @brief Construct an Err Task Result
+     *
+     * @param error Err value
+     * @return Task Result
+     */
+    static inline TaskResult<void> Err(TaskError&& error) { return TaskResult(std::move(error)); }
+
+    /**
+     * @brief Returns true if the result is Ok
+     *
+     * @return result is Ok variant
+     */
+    inline bool isOk() { return m_result.is_ok(); }
+
+    /**
+     * @brief retursn true if the result is Err
+     *
+     * @returnresult is Err variant
+     */
+    inline bool isErr() { return m_result.is_err(); }
+
+    /**
+     * @brief Unwraps the inner retult error, will panic rust if Result is a value.
+     *
+     * @return the Task error value
+     */
+    inline TaskError unwrapErr() && { return m_result.unwrap_err(); }
+
+    /**
+     * @brief calls a function with a refrence to the contained value if `Err`
+     *
+     * @param func function to call
+     * @return the unmodified REsult which rust has moved
+     */
+    inline TaskResult<void> inspectErr(std::function<void(Ref<TaskError>)> func) &&
+    {
+        return m_result.inspect_err(InspectFn<TaskError>::make_box([func = std::move(func)](Ref<TaskError> error) {
+            func(error);
+            return Unit{};
+        }));
+    }
+
+    /**
+     * @brief A std::visit analog for TaskResult. calls `okFunc`
+     * with the unwrapped `T` return value  of the task if the Result is Ok
+     * otherwise calls `errFunc` witht he unwrapped `Err` value
+     *
+     * @tparam U Rerturn type of the passed functions
+     * @param okFunc function to call on Ok value
+     * @param errFunc function to call on Err value
+     * @return return value of `okFunc` or `errFunc`
+     */
+    template <typename U>
+    inline U visit(std::function<U()> okFunc, std::function<U(TaskError)> errFunc) &&
+    {
+        if (m_result.is_ok()) {
+            return okFunc();
+        } else {
+            return errFunc(m_result.unwrap_err_unchecked());
+        }
+    }
+};
+
+/**
+ * @class task_spawn_error
+ * @brief An exception representing a TaskSpawnError
+ *
+ */
 struct task_spawn_error : public std::runtime_error {
    public:
     task_spawn_error(TaskSpawnError&& err);
@@ -83,17 +347,32 @@ struct task_spawn_error : public std::runtime_error {
     task_spawn_error(String&& err);
 };
 
+/**
+ * @class AbortHandle
+ * @brief A handle to abort a Tokio task
+ *
+ */
 class AbortHandle {
    public:
     AbortHandle(Option<FfiAbortHandle>&& handle);
 
    public:
+    /**
+     * @brief Abort the assoceated tokio task
+     */
     void abort();
 
    private:
     Option<FfiAbortHandle> m_handle;
 };
 
+/**
+ * @brief A Task running in the TaskManager
+ *
+ * @tparam T Return type of the Task
+ * @param task the backing task from rust
+ * @return a Task
+ */
 template <typename T>
 class Task {
    private:
@@ -103,17 +382,29 @@ class Task {
     Task(FfiTaskAny&& task);
 
    public:
+    /**
+     * @brief Create a new Task awaiting this Task
+     *
+     * @tparam T2 return type of the new Task
+     * @param func function to call with this Tasks's result
+     * @param options spawn options for the new Task
+     * @return a new Task
+     */
     template <typename T2>
-    Task<T2> then(std::function<T2(T)> func, std::function<T2(TaskError)> fail, std::optional<TaskOptions> options = std::nullopt);
+    Task<T2> then(std::function<T2(TaskResult<T>)> func, std::optional<TaskOptions> options = std::nullopt);
+    /**
+     * @brief Create a new Task awaiting this Task with a progress context
+     *
+     * @tparam T2 return type of the new Task
+     * @param func function to call with this Tasks's result and a context for the new task
+     * @param options spawn options for the new Task
+     * @return a new Task
+     */
     template <typename T2>
-    Task<T2> then(std::function<T2(T, RefTaskContext)> func,
-                  std::function<T2(TaskError, RefTaskContext)> fail,
-                  std::optional<TaskOptions> options = std::nullopt);
+    Task<T2> then(std::function<T2(TaskResult<T>, RefTaskContext)> func, std::optional<TaskOptions> options = std::nullopt);
 
-    Task<void> then(std::function<void(T)> func, std::function<void(TaskError)> fail, std::optional<TaskOptions> options = std::nullopt);
-    Task<void> then(std::function<void(T, RefTaskContext)> func,
-                    std::function<void(TaskError, RefTaskContext)> fail,
-                    std::optional<TaskOptions> options = std::nullopt);
+    Task<void> then(std::function<void(TaskResult<T>)> func, std::optional<TaskOptions> options = std::nullopt);
+    Task<void> then(std::function<void(TaskResult<T>, RefTaskContext)> func, std::optional<TaskOptions> options = std::nullopt);
 
     AbortHandle on_progress(std::function<void(Ref<TaskProgress>)>) const;
 
@@ -138,16 +429,12 @@ class Task<void> {
 
    public:
     template <typename T2>
-    Task<T2> then(std::function<T2()> func, std::function<T2(TaskError)> fail, std::optional<TaskOptions> options = std::nullopt);
+    Task<T2> then(std::function<T2(TaskResult<void>)> func, std::optional<TaskOptions> options = std::nullopt);
     template <typename T2>
-    Task<T2> then(std::function<T2(RefTaskContext)> func,
-                  std::function<T2(TaskError, RefTaskContext)> fail,
-                  std::optional<TaskOptions> options = std::nullopt);
+    Task<T2> then(std::function<T2(TaskResult<void>, RefTaskContext)> func, std::optional<TaskOptions> options = std::nullopt);
 
-    Task<void> then(std::function<void()> func, std::function<void(TaskError)> fail, std::optional<TaskOptions> options = std::nullopt);
-    Task<void> then(std::function<void(RefTaskContext)> func,
-                    std::function<void(TaskError, RefTaskContext)> fail,
-                    std::optional<TaskOptions> options = std::nullopt);
+    Task<void> then(std::function<void(TaskResult<void>)> func, std::optional<TaskOptions> options = std::nullopt);
+    Task<void> then(std::function<void(TaskResult<void>, RefTaskContext)> func, std::optional<TaskOptions> options = std::nullopt);
 
     AbortHandle on_progress(std::function<void(Ref<TaskProgress>)>) const;
 
@@ -174,21 +461,21 @@ class TaskManager {
 
 inline Option<RustTaskOptions> transform_options_ffi(std::optional<task::TaskOptions>& options)
 {
-    Option<RustTaskOptions> rust_opts = Option<RustTaskOptions>::None();
     if (options.has_value()) {
-        auto opts = options.value();
-        auto ropts = RustTaskOptions::new_();
-        if (opts.name.has_value()) {
-            ropts.set_name(Option<String>::Some(rust_util::to_rust_str(opts.name.value().c_str()).to_owned()));
-        }
-        auto tags = ropts.tags_mut();
-        for (auto& tag : opts.tags) {
-            tags.insert(rust_util::to_rust_str(tag.c_str()).to_owned());
-        }
+        return Option<RustTaskOptions>::Some(std::move(*options).take());
+    } else {
+        return Option<RustTaskOptions>::None();
     }
-    return rust_opts;
 }
 
+/**
+ * @brief Wrap a function call with `try {...} catch {...}`
+ * and convert the return value into a type which can croll the c++/rust boundry
+ *
+ * @param func The function to call
+ * @param args the arguments to cal the function with in order
+ * @return a rust Result which can pass the FFI boundry
+ */
 template <typename Try, typename... Args>
 inline Result<RustCxxAny, TaskError> trycatch_any(Try&& func, Args&&... args)
 {
@@ -196,14 +483,28 @@ inline Result<RustCxxAny, TaskError> trycatch_any(Try&& func, Args&&... args)
         return Result<RustCxxAny, TaskError>::Ok(
             RustCxxAny(rust::ZngurCppOpaqueOwnedObject::build<task::ffi::CxxAny>(func(std::forward<Args>(args)...))));
     } catch (const ::std::exception& e) {
-        return Result<RustCxxAny, TaskError>::Err(
-            TaskError::Error(FfiError::External(rust::ZngurCppOpaqueOwnedObject::build<task::ffi::CxxException>(e))));
+        auto what = e.what();
+        try {
+            throw;  // rethrow to ensure we capture full derived type
+        } catch (...) {
+            return Result<RustCxxAny, TaskError>::Err(TaskError::Error(
+                FfiError::External(rust::ZngurCppOpaqueOwnedObject::build<task::ffi::CxxException>(std::current_exception(), what))));
+        }
     } catch (...) {
         return Result<RustCxxAny, TaskError>::Err(TaskError::Error(
             FfiError::External(rust::ZngurCppOpaqueOwnedObject::build<task::ffi::CxxException>(std::current_exception()))));
     }
 }
 
+/**
+ * @brief Wrap a function call with `try {...} catch {...}`
+ * and convert the return value into a type which can croll the c++/rust boundry
+ * specialized for void return types
+ *
+ * @param func The function to call
+ * @param args the arguments to cal the function with in order
+ * @return a rust Result which can pass the FFI boundry
+ */
 template <typename Try, typename... Args>
 inline Result<Unit, TaskError> trycatch_unit(Try&& func, Args&&... args)
 {
@@ -211,13 +512,22 @@ inline Result<Unit, TaskError> trycatch_unit(Try&& func, Args&&... args)
         func(std::forward<Args>(args)...);
         return Result<Unit, TaskError>::Ok(Unit());
     } catch (const ::std::exception& e) {
-        return Result<Unit, TaskError>::Err(
-            TaskError::Error(FfiError::External(rust::ZngurCppOpaqueOwnedObject::build<task::ffi::CxxException>(e))));
+        auto what = e.what();
+        try {
+            throw;  // rethrow to ensure we capture full derived type
+        } catch (...) {
+            return Result<Unit, TaskError>::Err(TaskError::Error(
+                FfiError::External(rust::ZngurCppOpaqueOwnedObject::build<task::ffi::CxxException>(std::current_exception(), what))));
+        }
     } catch (...) {
         return Result<Unit, TaskError>::Err(TaskError::Error(
             FfiError::External(rust::ZngurCppOpaqueOwnedObject::build<task::ffi::CxxException>(std::current_exception()))));
     }
 }
+
+// -----------------------
+// Task Creation
+// -----------------------
 
 template <typename T>
 Task<T> TaskManager::newTask(std::function<T()> f, std::optional<TaskOptions> options)
@@ -234,24 +544,27 @@ Task<T> TaskManager::newTask(std::function<T(Ref<TaskContext>)> f, std::optional
                                                    transform_options_ffi(options)));
 }
 
+// void specialized
+
 template <>
 Task<void> TaskManager::newTask(std::function<void()> f, std::optional<TaskOptions> options);
 template <>
 Task<void> TaskManager::newTask(std::function<void(Ref<TaskContext>)> f, std::optional<TaskOptions> options);
 
+// -------------------------------
+// Task Continuations
+// -------------------------------
+
 template <typename T>
 template <typename T2>
-Task<T2> Task<T>::then(std::function<T2(T)> func, std::function<T2(TaskError)> fail, std::optional<TaskOptions> options)
+Task<T2> Task<T>::then(std::function<T2(TaskResult<T>)> func, std::optional<TaskOptions> options)
 {
-    auto result = m_task.as_ref().then(BoxDyn<Fn<Result<RustCxxAny, TaskError>, Result<RustCxxAny, TaskError>>, Send>::make_box(
-                                           [func = std::move(func), fail = std::move(fail)](Result<RustCxxAny, TaskError> result) {
-                                               if (result.is_ok()) {
-                                                   return trycatch_any(func, result.unwrap().cpp().take<T>());
-                                               } else {
-                                                   return trycatch_any(fail, result.err().unwrap());
-                                               }
-                                           }),
-                                       transform_options_ffi(options));
+    auto result =
+        m_task.as_ref().then(TaskContFn<RustCxxAny, RustCxxAny>::make_box([func = std::move(func)](Result<RustCxxAny, TaskError> result) {
+                                 auto task_result = TaskResult<T>(std::move(result));
+                                 return trycatch_any(func, std::move(task_result));
+                             }),
+                             transform_options_ffi(options));
 
     if (result.is_err()) {
         throw task_spawn_error(result.err().unwrap());
@@ -260,20 +573,14 @@ Task<T2> Task<T>::then(std::function<T2(T)> func, std::function<T2(TaskError)> f
 }
 template <typename T>
 template <typename T2>
-Task<T2> Task<T>::then(std::function<T2(T, Ref<TaskContext>)> func,
-                       std::function<T2(TaskError, Ref<TaskContext>)> fail,
-                       std::optional<TaskOptions> options)
+Task<T2> Task<T>::then(std::function<T2(TaskResult<T>, Ref<TaskContext>)> func, std::optional<TaskOptions> options)
 {
-    auto result = m_task.as_ref().then_with_ctx(
-        BoxDyn<Fn<Result<RustCxxAny, TaskError>, Ref<TaskContext>, Result<RustCxxAny, TaskError>>, Send>::make_box(
-            [func = std::move(func), fail = std::move(fail)](Result<RustCxxAny, TaskError> result, Ref<TaskContext> ctx) {
-                if (result.is_ok()) {
-                    return trycatch_any(func, result.unwrap().cpp().take<T>(), ctx);
-                } else {
-                    return trycatch_any(fail, result.err().unwrap(), ctx);
-                }
-            }),
-        transform_options_ffi(options));
+    auto result = m_task.as_ref().then_with_ctx(TaskContCtxFn<RustCxxAny, RustCxxAny>::make_box(
+                                                    [func = std::move(func)](Result<RustCxxAny, TaskError> result, Ref<TaskContext> ctx) {
+                                                        auto task_result = TaskResult<T>(std::move(result));
+                                                        return trycatch_any(func, std::move(task_result), ctx);
+                                                    }),
+                                                transform_options_ffi(options));
     if (result.is_err()) {
         throw task_spawn_error(result.err().unwrap());
     }
@@ -281,37 +588,27 @@ Task<T2> Task<T>::then(std::function<T2(T, Ref<TaskContext>)> func,
 }
 
 template <typename T>
-Task<void> Task<T>::then(std::function<void(T)> func, std::function<void(TaskError)> fail, std::optional<TaskOptions> options)
+Task<void> Task<T>::then(std::function<void(TaskResult<T>)> func, std::optional<TaskOptions> options)
 {
-    auto result = m_task.as_ref().then(BoxDyn<Fn<Result<RustCxxAny, TaskError>, Result<Unit, TaskError>>, Send>::make_box(
-                                           [func = std::move(func), fail = std::move(fail)](Result<RustCxxAny, TaskError> result) {
-                                               if (result.is_ok()) {
-                                                   task::ffi::CxxAny ret = result.unwrap().cpp();
-                                                   return trycatch_unit(func, ret.cast<T>());
-                                               } else {
-                                                   return trycatch_unit(fail, result.err().unwrap());
-                                               }
-                                           }),
-                                       transform_options_ffi(options));
+    auto result =
+        m_task.as_ref().then(TaskContFn<RustCxxAny, Unit>::make_box([func = std::move(func)](Result<RustCxxAny, TaskError> result) {
+                                 auto task_result = TaskResult<T>(std::move(result));
+                                 return trycatch_unit(func, std::move(task_result));
+                             }),
+                             transform_options_ffi(options));
     if (result.is_err()) {
         throw task_spawn_error(result.err().unwrap());
     }
     return result.unwrap();
 }
 template <typename T>
-Task<void> Task<T>::then(std::function<void(T, Ref<TaskContext>)> func,
-                         std::function<void(TaskError, Ref<TaskContext>)> fail,
-                         std::optional<TaskOptions> options)
+Task<void> Task<T>::then(std::function<void(TaskResult<T>, Ref<TaskContext>)> func, std::optional<TaskOptions> options)
 {
     auto result = m_task.as_ref().then_with_ctx(
-        BoxDyn<Fn<Result<RustCxxAny, TaskError>, Ref<TaskContext>, Result<Unit, TaskError>>, Send>::make_box(
-            [func = std::move(func), fail = std::move(fail)](Result<RustCxxAny, TaskError> result, Ref<TaskContext> ctx) {
-                if (result.is_ok()) {
-                    return trycatch_unit(func, result.unwrap().cpp().take<T>(), ctx);
-                } else {
-                    return trycatch_unit(fail, result.err().unwrap(), ctx);
-                }
-            }),
+        TaskContCtxFn<RustCxxAny, Unit>::make_box([func = std::move(func)](Result<RustCxxAny, TaskError> result, Ref<TaskContext> ctx) {
+            auto task_result = TaskResult<T>(std::move(result));
+            return trycatch_any(func, std::move(task_result), ctx);
+        }),
         transform_options_ffi(options));
     if (result.is_err()) {
         throw task_spawn_error(result.err().unwrap());
@@ -320,16 +617,12 @@ Task<void> Task<T>::then(std::function<void(T, Ref<TaskContext>)> func,
 }
 
 template <typename T2>
-Task<T2> Task<void>::then(std::function<T2()> func, std::function<T2(TaskError)> fail, std::optional<TaskOptions> options)
+Task<T2> Task<void>::then(std::function<T2(TaskResult<void>)> func, std::optional<TaskOptions> options)
 {
-    auto result = m_task.as_ref().then(BoxDyn<Fn<Result<Unit, TaskError>, Result<RustCxxAny, TaskError>>, Send>::make_box(
-                                           [func = std::move(func), fail = std::move(fail)](Result<Unit, TaskError> result) {
-                                               if (result.is_ok()) {
-                                                   return trycatch_any(func);
-                                               } else {
-                                                   return trycatch_any(fail, result.err().unwrap());
-                                               }
-                                           }),
+    auto result = m_task.as_ref().then(TaskContFn<Unit, RustCxxAny>::make_box([func = std::move(func)](Result<Unit, TaskError> result) {
+                                           auto task_result = TaskResult<void>(std::move(result));
+                                           return trycatch_any(func, std::move(task_result));
+                                       }),
                                        transform_options_ffi(options));
     if (result.is_err()) {
         throw task_spawn_error(result.err().unwrap());
@@ -338,19 +631,13 @@ Task<T2> Task<void>::then(std::function<T2()> func, std::function<T2(TaskError)>
 }
 
 template <typename T2>
-Task<T2> Task<void>::then(std::function<T2(Ref<TaskContext>)> func,
-                          std::function<T2(TaskError, Ref<TaskContext>)> fail,
-                          std::optional<TaskOptions> options)
+Task<T2> Task<void>::then(std::function<T2(TaskResult<void>, Ref<TaskContext>)> func, std::optional<TaskOptions> options)
 {
     auto result = m_task.as_ref().then_with_ctx(
-        BoxDyn<Fn<Result<Unit, TaskError>, Ref<TaskContext>, Result<RustCxxAny, TaskError>>, Send>::make_box(
-            [func = std::move(func), fail = std::move(fail)](Result<Unit, TaskError> result, Ref<TaskContext> ctx) {
-                if (result.is_ok()) {
-                    return trycatch_any(func, ctx);
-                } else {
-                    return trycatch_any(fail, result.err().unwrap(), ctx);
-                }
-            }),
+        TaskContCtxFn<Unit, RustCxxAny>::make_box([func = std::move(func)](Result<Unit, TaskError> result, Ref<TaskContext> ctx) {
+            auto task_result = TaskResult<void>(std::move(result));
+            return trycatch_unit(func, std::move(task_result), ctx);
+        }),
         transform_options_ffi(options));
     if (result.is_err()) {
         throw task_spawn_error(result.err().unwrap());
@@ -359,12 +646,10 @@ Task<T2> Task<void>::then(std::function<T2(Ref<TaskContext>)> func,
 }
 
 template <>
-Task<void> Task<void>::then(std::function<void()> func, std::function<void(TaskError)> fail, std::optional<TaskOptions> options);
+Task<void> Task<void>::then(std::function<void(TaskResult<void>)> func, std::optional<TaskOptions> options);
 
 template <>
-Task<void> Task<void>::then(std::function<void(Ref<TaskContext>)> func,
-                            std::function<void(TaskError, Ref<TaskContext>)> fail,
-                            std::optional<TaskOptions> options);
+Task<void> Task<void>::then(std::function<void(TaskResult<void>, Ref<TaskContext>)> func, std::optional<TaskOptions> options);
 
 template <typename T>
 AbortHandle Task<T>::on_progress(std::function<void(Ref<TaskProgress>)> func) const

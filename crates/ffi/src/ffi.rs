@@ -21,9 +21,16 @@ impl std::fmt::Display for CxxException {
     }
 }
 
+impl std::fmt::Debug for CxxAny {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.fmt_debug(f)
+    }
+}
+
 /// ffi helper for iterator size hints
 pub trait SizeHintExt {
     fn lower(&self) -> usize;
+
     fn upper (&self) -> Option<usize>;
 }
  
@@ -35,7 +42,5 @@ impl SizeHintExt for (usize, Option<usize>) {
         self.1
     }
 }
-
-
 
 

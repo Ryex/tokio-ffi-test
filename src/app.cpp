@@ -37,30 +37,33 @@ void Application::showMainWindow()
 
 void Application::setUpTasks()
 {
-    connect(&m_taskWatcher, &TaskWatcher<std::int64_t>::taskSucceded, this, [this]() {
-        m_mainWindow->setLabel(QString("final value %1").arg(m_taskWatcher.result()));
-        m_mainWindow->enableButton();
-    });
-
-    connect(&m_taskWatcher, &TaskWatcher<std::int64_t>::taskFailed, this, [this]() {
-        const task::TaskError& terr = m_taskWatcher.error();
-        auto msg_rust = terr.to_string();
-        auto msg = QString::fromUtf8(reinterpret_cast<const char*>(msg_rust.as_str().as_ptr()), msg_rust.len());
-        if (terr.as_error().is_some()) {
-            auto inner_err = terr.as_error().unwrap();
-            if (inner_err.as_external().is_some()) {
-                auto ex = inner_err.as_external().unwrap();
-                try {
-                    std::rethrow_exception(ex.cpp().exception());
-                } catch (const std::exception& err) {
-                    msg += " (caught std::exception)";
-                } catch (...) {
-                    msg += " (caught unknown error)";
+    connect(&m_taskWatcher, &TaskWatcher<std::int64_t>::taskFinished, this, [this]() {
+        m_taskWatcher.result().visit<void>(
+            [this](long value) {
+                m_mainWindow->setLabel(QString("final value %1").arg(value));
+                m_mainWindow->enableButton();
+            },
+            [this](task::TaskError error) {
+                auto msg_rust = error.to_string();
+                auto msg = QString::fromUtf8(reinterpret_cast<const char*>(msg_rust.as_str().as_ptr()), msg_rust.len());
+                if (auto inner_err = error.as_error(); inner_err.is_some()) {
+                    if (auto ex = inner_err.unwrap().as_external(); ex.is_some()) {
+                        try {
+                            std::rethrow_exception(ex.unwrap().cpp().exception());
+                        } catch (const std::runtime_error& err) {
+                            msg += " (caught std::runtime_error)";
+                        } catch (const std::invalid_argument& err) {
+                            msg += " (caught std::invalid_argument)";
+                        } catch (const std::exception& err) {
+                            msg += " (caught std::exception)";
+                        } catch (...) {
+                            msg += " (caught unknown error)";
+                        }
+                    }
                 }
-            }
-        }
-        m_mainWindow->setLabel(QString("Error in Task: %1").arg(msg));
-        m_mainWindow->enableButton();
+                m_mainWindow->setLabel(QString("Error in Task: %1").arg(msg));
+                m_mainWindow->enableButton();
+            });
     });
 
     connect(&m_taskWatcher, &TaskWatcher<std::int64_t>::progressChanged, this, [this](uint64_t progress, uint64_t maximum) {
@@ -74,7 +77,7 @@ void Application::setUpTasks()
         auto task = this->m_taskManager.newTask<std::int64_t>(
             [](task::RefTaskContext ctx) {
                 int n = QRandomGenerator::global()->bounded(100);  // Number of Fibonacci terms to generate
-                if (n % 3 != 0) {
+                if (n % 3 == 0) {
                     throw std::runtime_error("No Muptiples of 3!");
                 } else if (n % 5 == 0) {
                     throw std::invalid_argument("I don't like numbers divisible by 5");
@@ -99,7 +102,7 @@ void Application::setUpTasks()
 
                 return nextTerm;
             },
-            task::TaskOptions());
+            task::TaskOptions().withTags(std::vector<std::string>{ "a-tag", "another-tag" }));
         m_mainWindow->setLabel("Working ...");
         m_taskWatcher.setTask(std::move(task));
         QPointer<MainWindow> window = m_mainWindow;

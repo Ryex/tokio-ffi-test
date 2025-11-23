@@ -1,3 +1,0 @@
-type Box< <%- self.ty %> > {
-    #layout(size = 16, align = 8);
-}

@@ -12,13 +12,6 @@ type bool {
     wellknown_traits(Copy);
 }
 
-type [&str] {
-    wellknown_traits(?Sized);
-
-    fn len(&self) -> usize;
-    fn to_vec(&self) -> ::std::vec::Vec<&str>;
-}
-
 type [::std::string::String] {
     wellknown_traits(?Sized);
 
@@ -55,12 +48,27 @@ mod std {
             fn from_utf16(&[u16]) -> ::std::result::Result<::std::string::String, FromUtf16Error>;
             
         }
+        type FromUtf16Error {
+            #layout(size = 0, align = 1);
+        }
+        type FromUtf8Error {
+            #layout(size = 40, align = 8);
+        }
+    }
+
+    mod str {
+        type Utf8Error {
+            #layout(size = 16, align = 8);
+        }
     }
     
     mod option {
 
         type Option<&::std::string::String> {
             #layout(size = 8, align = 8);
+
+            constructor None;
+            constructor Some(&::std::string::String);
 
             fn unwrap(self) -> &::std::string::String;
         }
@@ -75,6 +83,19 @@ mod std {
         }
     }
 
+    mod fmt {
+        type Formatter {
+            #only_by_ref;
+
+            fn write_str(&mut self, &str) -> ::std::result::Result<(), Error>; 
+        }
+
+        type Error {
+            #layout(size = 0, align = 1);
+        }
+    }
+
+
     mod result {
         type Result<::std::string::String, ::std::string::FromUtf8Error> {
             #layout(size = 40, align = 8);
@@ -86,8 +107,13 @@ mod std {
         }
         type Result<&str, ::std::str::Utf8Error> {
             #layout(size = 24, align = 8);
-
             fn expect(self, &str) -> &str;
+        }
+        type Result<(), ::std::fmt::Error> {
+            #layout(size = 1, align = 1);
+            
+            constructor Ok(());
+            fn expect(self, &str) -> ();
         }
     }
 }
@@ -170,4 +196,20 @@ mod ::std {
             fn to_owned(&self) -> ::std::string::String deref str;
         }
     }
+}
+
+// interator traits
+
+mod ::std {
+
+    trait iter::Iterator::<Item = ::std::string::String> {
+        fn next(&mut self) -> ::std::option::Option<::std::string::String>;
+    }
+
+}
+
+
+type Box<dyn ::std::iter::Iterator<Item = ::std::string::String>> {
+    #layout(size = 16, align = 8);
+    fn collect<::std::vec::Vec<::std::string::String>>(self) -> ::std::vec::Vec<::std::string::String>;
 }

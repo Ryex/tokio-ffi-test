@@ -71,10 +71,25 @@ mod crate::task {
         fn tags(&self) -> &HashSet<String>;
         fn tags_mut(&mut self) -> &mut HashSet<String>;
 
+        fn add_tags<Vec<String>, String>(&mut self, Vec<String>) -> &mut TaskOptions;
+        fn add_tags<
+            Box<dyn ::std::iter::Iterator<Item = String>>,
+            String
+        >(&mut self, Box<dyn ::std::iter::Iterator<Item = String>>) -> &mut TaskOptions;
+
+        fn set_tags<Vec<String>, String>(&mut self, Vec<String>) -> &mut TaskOptions;
+        fn set_tags<
+            Box<dyn ::std::iter::Iterator<Item = String>>,
+            String
+        >(&mut self, Box<dyn ::std::iter::Iterator<Item = String>>) -> &mut TaskOptions;
+
         fn with_name(self, String) -> TaskOptions;
         
-        fn with_tags<Vec<&str>, &str>(self, Vec<&str>) -> TaskOptions;
         fn with_tags<Vec<String>, String>(self, Vec<String>) -> TaskOptions;
+        fn with_tags<
+            Box<dyn ::std::iter::Iterator<Item = String>>,
+            String
+        >(self, Box<dyn ::std::iter::Iterator<Item = String>>) -> TaskOptions;
     }
 
     type TaskContext {
@@ -124,5 +139,9 @@ type crate::ffi::CxxException {
 extern "C++" {
     impl crate::ffi::CxxException {
         fn what(&self) -> &str;
+    }
+
+    impl crate::ffi::CxxAny {
+        fn fmt_debug(&self, &mut ::std::fmt::Formatter) -> ::std::result::Result::<(), ::std::fmt::Error>;
     }
 }
