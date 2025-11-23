@@ -47,7 +47,9 @@ void Application::setUpTasks()
             [this](task::TaskError error) {
                 auto msg_rust = error.to_string();
                 auto msg = QString::fromUtf8(reinterpret_cast<const char*>(msg_rust.as_str().as_ptr()), msg_rust.len());
-                if (auto inner_err = error.as_error(); inner_err.is_some()) {
+                if (error.matches_TaskCanceled()) {
+                    msg += " (This was a TaskError::TaskCanceled)";
+                } else if (auto inner_err = error.as_error(); inner_err.is_some()) {
                     if (auto ex = inner_err.unwrap().as_external(); ex.is_some()) {
                         try {
                             std::rethrow_exception(ex.unwrap().cpp().exception());
@@ -72,13 +74,16 @@ void Application::setUpTasks()
         m_mainWindow->setProgress(progress);
     });
 
+    static int task_counter = 0;
+
     m_mainWindow->setOnstart([this](QPointer<QPushButton> button) {
         button->setEnabled(false);
 
         auto task = this->m_taskManager.newTask<std::int64_t>(
             [](task::RefTaskContext ctx) {
                 //
-                // We are now in a new thread behind the Rust runtime but runnign a c++ closure!
+                // We are now in a new thread behind the Rust runtime but running a c++ closure!
+                // underthe hood this is running a `tokio::runtime::Runtime::spawn_blocking` task.
                 //
 
                 int n = QRandomGenerator::global()->bounded(100);  // Number of Fibonacci terms to generate
@@ -96,7 +101,7 @@ void Application::setUpTasks()
                 // lets set the maximum progress value
                 ctx.set_progress_maximum(n);
 
-                // tasks record thier id and context into thread_local storage and they can retreaved at any time!
+                // tasks record thier id and context into thread_local storage and they can be retreaved at any time!
                 qDebug() << "TaskId:" << rust_util::to_string_view(task::current::id().to_string());
                 auto tl_ctx = task::current::context();
                 auto task_name = tl_ctx.name();
@@ -122,6 +127,11 @@ void Application::setUpTasks()
                     ctx.set_progress(i);
                     // we're in another thread!~ this won't block the ui
                     std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                    // check if task canceling was requested
+                    if (ctx.is_canceled()) {
+                        // this special exception is checked for, caught, and converted into a task::TaskError::TaskCanceled
+                        throw task::task_canceled();
+                    }
                 }
                 ctx.set_progress(n);
 
@@ -130,6 +140,10 @@ void Application::setUpTasks()
             },
             task::TaskOptions("A_Task_Name").withTags(std::vector<std::string>{ "a-tag", "another-tag" }));
         m_mainWindow->setLabel("Working ...");
+        ++task_counter;
+        if (task_counter % 10 == 0) {
+            task.cancel();
+        }
         m_taskWatcher.setTask(std::move(task));
         QPointer<MainWindow> window = m_mainWindow;
     });
