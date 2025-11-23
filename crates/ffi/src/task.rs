@@ -278,8 +278,7 @@ pub struct TaskMetadata {
     abort_handle: tokio::task::AbortHandle,
     #[allow(dead_code)]
     progress: Option<Receiver<TaskProgress>>,
-    name: Option<String>,
-    tags: HashSet<String>,
+    options: TaskOptions,
     #[allow(dead_code)]
     context: Arc<TaskContext>,
 }
@@ -298,11 +297,11 @@ impl TaskMetadata {
     }
 
     pub fn name(&self) -> Option<&String> {
-        self.name.as_ref()
+        self.options.name.as_ref()
     }
 
     pub fn tags(&self) -> &HashSet<String> {
-        &self.tags
+        &self.options.tags
     }
 }
 
@@ -315,14 +314,23 @@ pub struct TaskSpawnOptions {
 
 #[derive(Debug, Default, Clone)]
 pub struct TaskOptions {
-    name: Option<String>,
-    tags: HashSet<String>,
+    pub name: Option<String>,
+    pub tags: HashSet<String>,
 }
 
-impl TaskOptions {
+impl TaskSpawnOptions {
     pub fn new() -> Self {
-        TaskOptions::default()
+        TaskSpawnOptions::default()
     }
+
+    pub fn named(name: String) -> Self {
+        TaskSpawnOptions {
+            name: Some(name),
+            tags: HashSet::new(),
+            progress: None,
+        }
+    }
+
     pub fn name(&self) -> Option<&String> {
         self.name.as_ref()
     }
@@ -361,11 +369,10 @@ impl TaskOptions {
         self
     }
 
-    pub fn to_spawn_options(self) -> TaskSpawnOptions {
-        TaskSpawnOptions {
-            name: self.name,
-            tags: self.tags,
-            progress: None,
+    pub fn to_options(&self) -> TaskOptions {
+        TaskOptions {
+            name: self.name.clone(),
+            tags: self.tags.clone(),
         }
     }
 
@@ -383,11 +390,16 @@ impl TaskOptions {
             .extend(tags.into_iter().map(|tag| tag.as_ref().to_owned()));
         self
     }
+
+    pub fn with_progress(mut self, progress: Receiver<TaskProgress>) -> Self {
+        self.progress = Some(progress);
+        self
+    }
 }
 
-impl From<TaskOptions> for TaskSpawnOptions {
-    fn from(value: TaskOptions) -> Self {
-        value.to_spawn_options()
+impl From<TaskSpawnOptions> for TaskOptions {
+    fn from(value: TaskSpawnOptions) -> Self {
+        value.to_options()
     }
 }
 
@@ -397,25 +409,36 @@ pub struct TaskContext {
     progress_maximum: AtomicU64,
     progress_sender: Option<Sender<TaskProgress>>,
     cancel: AtomicBool,
+    options: TaskOptions,
 }
 
 impl TaskContext {
-    pub fn new() -> Arc<Self> {
+    pub fn new(options: TaskOptions) -> Arc<Self> {
         Arc::new(TaskContext {
             progress: AtomicU64::new(0),
             progress_maximum: AtomicU64::new(0),
             progress_sender: None,
             cancel: AtomicBool::new(false),
+            options,
         })
     }
 
-    pub fn with_progress(sender: Sender<TaskProgress>) -> Arc<Self> {
+    pub fn with_progress(options: TaskOptions, sender: Sender<TaskProgress>) -> Arc<Self> {
         Arc::new(TaskContext {
             progress: AtomicU64::new(0),
             progress_maximum: AtomicU64::new(0),
             progress_sender: Some(sender),
             cancel: AtomicBool::new(false),
+            options,
         })
+    }
+
+    pub fn name(&self) -> Option<&String> {
+        self.options.name.as_ref()
+    }
+
+    pub fn tags(&self) -> &HashSet<String> {
+        &self.options.tags
     }
 
     fn send_update(&self) {
@@ -501,7 +524,7 @@ impl Default for TaskManager {
             runtime: Arc::new(
                 tokio::runtime::Builder::new_multi_thread()
                     .thread_name_fn(|| {
-                        static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
+                        static ATOMIC_ID: AtomicUsize = AtomicUsize::new(1);
                         let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
                         format!("task-api-{}", id)
                     })
@@ -570,9 +593,8 @@ impl TaskManager {
             id,
             abort_handle: task.abort_handle(),
             context: ctx,
+            options: options.to_options(),
             progress: options.progress,
-            name: options.name,
-            tags: options.tags,
         });
         self.tasks.insert(meta.id, meta.clone());
         (id, task, meta)
@@ -608,15 +630,14 @@ impl TaskManager {
             id,
             abort_handle: task.abort_handle(),
             context,
+            options: options.to_options(),
             progress: options.progress,
-            name: options.name,
-            tags: options.tags,
         });
         self.tasks.insert(meta.id, meta.clone());
         (id, task, meta)
     }
 
-    pub fn new_task<T, F, R>(&self, f: F, options: Option<TaskOptions>) -> Box<Task<T>>
+    pub fn new_task<T, F, R>(&self, f: F, options: Option<TaskSpawnOptions>) -> Box<Task<T>>
     where
         T: Send + 'static,
         F: FnOnce() -> R,
@@ -625,7 +646,7 @@ impl TaskManager {
         Task::new(self, f, options)
     }
 
-    pub fn new_blocking<T, F>(&self, f: F, options: Option<TaskOptions>) -> Box<Task<T>>
+    pub fn new_blocking<T, F>(&self, f: F, options: Option<TaskSpawnOptions>) -> Box<Task<T>>
     where
         T: Send + 'static,
         F: FnOnce() -> Result<T, TaskError> + Send + 'static,
@@ -633,7 +654,7 @@ impl TaskManager {
         Task::blocking(self, f, options)
     }
 
-    pub fn new_task_with_ctx<T, F, R>(&self, f: F, options: Option<TaskOptions>) -> Box<Task<T>>
+    pub fn new_task_with_ctx<T, F, R>(&self, f: F, options: Option<TaskSpawnOptions>) -> Box<Task<T>>
     where
         T: Send + 'static,
         F: FnOnce(&TaskContext) -> R,
@@ -642,39 +663,12 @@ impl TaskManager {
         Task::with_ctx(self, f, options)
     }
 
-    pub fn new_blocking_with_ctx<T, F>(&self, f: F, options: Option<TaskOptions>) -> Box<Task<T>>
+    pub fn new_blocking_with_ctx<T, F>(&self, f: F, options: Option<TaskSpawnOptions>) -> Box<Task<T>>
     where
         T: Send + 'static,
         F: FnOnce(&TaskContext) -> Result<T, TaskError> + Send + 'static,
     {
         Task::blocking_with_progress(self, f, options)
-    }
-}
-
-impl TaskSpawnOptions {
-    pub fn new(name: Option<String>) -> Self {
-        TaskSpawnOptions {
-            name,
-            tags: HashSet::new(),
-            progress: None,
-        }
-    }
-
-    pub fn with_name(mut self, name: String) -> Self {
-        self.name = Some(name);
-        self
-    }
-
-    pub fn with_tags(mut self, tags: impl IntoIterator<Item = impl AsRef<str>>) -> Self {
-        self.tags.clear();
-        self.tags
-            .extend(tags.into_iter().map(|tag| tag.as_ref().to_owned()));
-        self
-    }
-
-    pub fn with_progress(mut self, progress: Receiver<TaskProgress>) -> Self {
-        self.progress = Some(progress);
-        self
     }
 }
 
@@ -778,14 +772,14 @@ pub struct Task<T: Send + 'static> {
 }
 
 impl<T: Send + 'static> Task<T> {
-    pub fn new<F, R>(manager: &TaskManager, f: F, options: Option<TaskOptions>) -> Box<Self>
+    pub fn new<F, R>(manager: &TaskManager, f: F, options: Option<TaskSpawnOptions>) -> Box<Self>
     where
         F: FnOnce() -> R,
         R: Future<Output = Result<T, TaskError>> + Send + 'static,
     {
-        let tc = TaskContext::new();
+        let tc = TaskContext::new(options.clone().unwrap_or_default().to_options());
         let ctx = tc.clone();
-        let (id, task, meta) = manager.spawn(f(), tc, options.map(TaskOptions::to_spawn_options));
+        let (id, task, meta) = manager.spawn(f(), tc, options);
         Box::new(Task {
             id,
             manager: manager.clone(),
@@ -796,13 +790,13 @@ impl<T: Send + 'static> Task<T> {
         })
     }
 
-    pub fn blocking<F>(manager: &TaskManager, f: F, options: Option<TaskOptions>) -> Box<Self>
+    pub fn blocking<F>(manager: &TaskManager, f: F, options: Option<TaskSpawnOptions>) -> Box<Self>
     where
         F: FnOnce() -> Result<T, TaskError> + Send + 'static,
     {
-        let tc = TaskContext::new();
+        let tc = TaskContext::new(options.clone().unwrap_or_default().to_options());
         let ctx = tc.clone();
-        let (id, task, meta) = manager.spawn_blocking(f, tc, options.map(TaskOptions::to_spawn_options));
+        let (id, task, meta) = manager.spawn_blocking(f, tc, options);
         Box::new(Task {
             id,
             manager: manager.clone(),
@@ -813,23 +807,22 @@ impl<T: Send + 'static> Task<T> {
         })
     }
 
-    pub fn with_ctx<F, R>(manager: &TaskManager, f: F, options: Option<TaskOptions>) -> Box<Self>
+    pub fn with_ctx<F, R>(
+        manager: &TaskManager,
+        f: F,
+        options: Option<TaskSpawnOptions>,
+    ) -> Box<Self>
     where
         F: FnOnce(&TaskContext) -> R,
         R: Future<Output = Result<T, TaskError>> + Send + 'static,
     {
         let (ptx, prx) = tokio::sync::watch::channel(TaskProgress::default());
-        let tc = TaskContext::with_progress(ptx);
+        let tc = TaskContext::with_progress(options.clone().unwrap_or_default().to_options(), ptx);
         let ctx = tc.clone();
         let (id, task, meta) = manager.spawn(
             f(&tc),
             tc.clone(),
-            Some(
-                options
-                    .unwrap_or_default()
-                    .to_spawn_options()
-                    .with_progress(prx.clone()),
-            ),
+            Some(options.unwrap_or_default().with_progress(prx.clone())),
         );
         Box::new(Task {
             id,
@@ -844,23 +837,18 @@ impl<T: Send + 'static> Task<T> {
     pub fn blocking_with_progress<F>(
         manager: &TaskManager,
         f: F,
-        options: Option<TaskOptions>,
+        options: Option<TaskSpawnOptions>,
     ) -> Box<Self>
     where
         F: FnOnce(&TaskContext) -> Result<T, TaskError> + Send + 'static,
     {
         let (ptx, prx) = tokio::sync::watch::channel(TaskProgress::default());
-        let tc = TaskContext::with_progress(ptx);
+        let tc = TaskContext::with_progress(options.clone().unwrap_or_default().to_options(), ptx);
         let ctx = tc.clone();
         let (id, task, meta) = manager.spawn_blocking(
             move || f(&tc),
             ctx.clone(),
-            Some(
-                options
-                    .unwrap_or_default()
-                    .to_spawn_options()
-                    .with_progress(prx.clone()),
-            ),
+            Some(options.unwrap_or_default().with_progress(prx.clone())),
         );
         Box::new(Task {
             id,
@@ -879,7 +867,7 @@ impl<T: Send + 'static> Task<T> {
     pub fn then<T2, F>(
         &self,
         callback: F,
-        options: Option<TaskOptions>,
+        options: Option<TaskSpawnOptions>,
     ) -> Result<Box<Task<T2>>, TaskSpawnError>
     where
         T2: Send + 'static,
@@ -894,7 +882,7 @@ impl<T: Send + 'static> Task<T> {
             *handle_lock = Some(continued);
             handle
         };
-        let tc = TaskContext::new();
+        let tc = TaskContext::new(options.clone().unwrap_or_default().to_options());
         let ctx = tc.clone();
         let (id, task, meta) = self.manager.spawn(
             async move {
@@ -912,7 +900,7 @@ impl<T: Send + 'static> Task<T> {
                 .and_then(|ret| ret)
             },
             ctx.clone(),
-            options.map(TaskOptions::to_spawn_options),
+            options,
         );
         Ok(Box::new(Task {
             id,
@@ -927,7 +915,7 @@ impl<T: Send + 'static> Task<T> {
     pub fn then_with_ctx<T2, F>(
         &self,
         callback: F,
-        options: Option<TaskOptions>,
+        options: Option<TaskSpawnOptions>,
     ) -> Result<Box<Task<T2>>, TaskSpawnError>
     where
         T2: Send + 'static,
@@ -943,7 +931,7 @@ impl<T: Send + 'static> Task<T> {
             handle
         };
         let (ptx, prx) = tokio::sync::watch::channel(TaskProgress::default());
-        let tc = TaskContext::with_progress(ptx);
+        let tc = TaskContext::with_progress(options.clone().unwrap_or_default().to_options(), ptx);
         let ctx = tc.clone();
         let (id, task, meta) = self.manager.spawn(
             async move {
@@ -964,7 +952,6 @@ impl<T: Send + 'static> Task<T> {
             Some(
                 options
                     .unwrap_or_default()
-                    .to_spawn_options()
                     .with_progress(prx.clone()),
             ),
         );

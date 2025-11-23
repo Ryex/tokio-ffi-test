@@ -37,6 +37,9 @@ using Fn = rust::Fn<T...>;
 template <typename... T>
 using BoxDyn = Box<Dyn<T...>>;
 
+template <typename T>
+using Arc = rust::std::sync::Arc<T>;
+
 using RustCxxAny = rust::crate::ffi::CxxAny;
 
 using TaskError = rust::crate::task::TaskError;
@@ -51,7 +54,7 @@ using RefTaskContext = Ref<TaskContext>;
 using TaskProgress = rust::crate::task::TaskProgress;
 using RefTaskProgress = Ref<TaskProgress>;
 
-using RustTaskOptions = rust::crate::task::TaskOptions;
+using TaskSpawnOptions = rust::crate::task::TaskSpawnOptions;
 using FfiError = rust::crate::task::FfiError;
 using FfiAbortHandle = rust::tokio::task::AbortHandle;
 using TokioId = rust::tokio::task::Id;
@@ -77,6 +80,16 @@ inline Option<TaskId> try_id()
     return rust::crate::task::current::try_id();
 }
 
+inline Ref<TaskContext> context()
+{
+    return rust::crate::task::current::context().deref();
+}
+
+inline Option<Ref<TaskContext>> try_context()
+{
+    return rust::crate::task::current::try_context().as_deref();
+}
+
 }  // namespace current
 
 /**
@@ -86,10 +99,13 @@ inline Option<TaskId> try_id()
  */
 class TaskOptions {
    private:
-    RustTaskOptions m_opts;
+    TaskSpawnOptions m_opts;
 
    public:
-    TaskOptions() : m_opts(RustTaskOptions::new_()) {}
+    TaskOptions() : m_opts(TaskSpawnOptions::new_()) {}
+    template <typename T>
+    TaskOptions(T name) : m_opts(TaskSpawnOptions::named(rust_util::to_rust_string(name)))
+    {}
 
     /**
      * @brief Add a name to the task
@@ -124,12 +140,12 @@ class TaskOptions {
     }
 
     /**
-     * @brief Take the contained RustTaskOptions moving it out of the TaskOptions
+     * @brief Take the contained TaskSpawnOptions moving it out of the TaskOptions
      * object is unusable after
      *
-     * @return The inner RustTaskOptions
+     * @return The inner TaskSpawnOptions
      */
-    RustTaskOptions&& take() && { return std::move(m_opts); }
+    TaskSpawnOptions&& take() && { return std::move(m_opts); }
 };
 
 /**
@@ -347,6 +363,11 @@ struct task_spawn_error : public std::runtime_error {
     task_spawn_error(String&& err);
 };
 
+struct task_canceled : public std::runtime_error {
+   public:
+    task_canceled();
+};
+
 /**
  * @class AbortHandle
  * @brief A handle to abort a Tokio task
@@ -459,18 +480,18 @@ class TaskManager {
     Task<T> newTask(std::function<T(RefTaskContext)>, std::optional<TaskOptions> options = std::nullopt);
 };
 
-inline Option<RustTaskOptions> transform_options_ffi(std::optional<task::TaskOptions>& options)
+inline Option<TaskSpawnOptions> transform_options_ffi(std::optional<task::TaskOptions>& options)
 {
     if (options.has_value()) {
-        return Option<RustTaskOptions>::Some(std::move(*options).take());
+        return Option<TaskSpawnOptions>::Some(std::move(*options).take());
     } else {
-        return Option<RustTaskOptions>::None();
+        return Option<TaskSpawnOptions>::None();
     }
 }
 
 /**
  * @brief Wrap a function call with `try {...} catch {...}`
- * and convert the return value into a type which can croll the c++/rust boundry
+ * and convert the return value into a type which can cross the c++/rust boundry
  *
  * @param func The function to call
  * @param args the arguments to cal the function with in order
@@ -482,6 +503,8 @@ inline Result<RustCxxAny, TaskError> trycatch_any(Try&& func, Args&&... args)
     try {
         return Result<RustCxxAny, TaskError>::Ok(
             RustCxxAny(rust::ZngurCppOpaqueOwnedObject::build<task::ffi::CxxAny>(func(std::forward<Args>(args)...))));
+    } catch (const task_canceled&) {
+        return Result<RustCxxAny, TaskError>::Err(TaskError::TaskCanceled());
     } catch (const ::std::exception& e) {
         auto what = e.what();
         try {
@@ -498,7 +521,7 @@ inline Result<RustCxxAny, TaskError> trycatch_any(Try&& func, Args&&... args)
 
 /**
  * @brief Wrap a function call with `try {...} catch {...}`
- * and convert the return value into a type which can croll the c++/rust boundry
+ * and convert the return value into a type which can cross the c++/rust boundry
  * specialized for void return types
  *
  * @param func The function to call
@@ -511,6 +534,8 @@ inline Result<Unit, TaskError> trycatch_unit(Try&& func, Args&&... args)
     try {
         func(std::forward<Args>(args)...);
         return Result<Unit, TaskError>::Ok(Unit());
+    } catch (const task_canceled&) {
+        return Result<Unit, TaskError>::Err(TaskError::TaskCanceled());
     } catch (const ::std::exception& e) {
         auto what = e.what();
         try {

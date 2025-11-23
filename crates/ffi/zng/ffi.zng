@@ -8,7 +8,7 @@ use ::std::option::Option as Option ;
 use ::std::result::Result as Result;
 use ::std::collections::HashSet as HashSet;
 
-use crate::task::TaskOptions as TaskOptions;
+use crate::task::TaskSpawnOptions as TaskSpawnOptions;
 use crate::task::TaskId as TaskId;
 use crate::task::TaskError as TaskError;
 use crate::task::TaskContext as TaskContext;
@@ -59,42 +59,45 @@ mod crate::task {
         fn tags(&self) -> &HashSet<String>;
     }
 
-    type TaskOptions {
-        #layout(size = 72, align = 8);
+    type TaskSpawnOptions {
+        #layout(size = 88, align = 8);
 
-        fn new() -> TaskOptions;
-        fn clone(&self) -> TaskOptions;
+        fn new() -> TaskSpawnOptions;
+        fn named(String) -> TaskSpawnOptions;
+        fn clone(&self) -> TaskSpawnOptions;
         
         fn name(&self) -> Option<&String>;
-        fn set_name(&mut self, Option<String>) -> &mut TaskOptions;
+        fn set_name(&mut self, Option<String>) -> &mut TaskSpawnOptions;
         
         fn tags(&self) -> &HashSet<String>;
         fn tags_mut(&mut self) -> &mut HashSet<String>;
 
-        fn add_tags<Vec<String>, String>(&mut self, Vec<String>) -> &mut TaskOptions;
+        fn add_tags<Vec<String>, String>(&mut self, Vec<String>) -> &mut TaskSpawnOptions;
         fn add_tags<
             Box<dyn ::std::iter::Iterator<Item = String>>,
             String
-        >(&mut self, Box<dyn ::std::iter::Iterator<Item = String>>) -> &mut TaskOptions;
+        >(&mut self, Box<dyn ::std::iter::Iterator<Item = String>>) -> &mut TaskSpawnOptions;
 
-        fn set_tags<Vec<String>, String>(&mut self, Vec<String>) -> &mut TaskOptions;
+        fn set_tags<Vec<String>, String>(&mut self, Vec<String>) -> &mut TaskSpawnOptions;
         fn set_tags<
             Box<dyn ::std::iter::Iterator<Item = String>>,
             String
-        >(&mut self, Box<dyn ::std::iter::Iterator<Item = String>>) -> &mut TaskOptions;
+        >(&mut self, Box<dyn ::std::iter::Iterator<Item = String>>) -> &mut TaskSpawnOptions;
 
-        fn with_name(self, String) -> TaskOptions;
+        fn with_name(self, String) -> TaskSpawnOptions;
         
-        fn with_tags<Vec<String>, String>(self, Vec<String>) -> TaskOptions;
+        fn with_tags<Vec<String>, String>(self, Vec<String>) -> TaskSpawnOptions;
         fn with_tags<
             Box<dyn ::std::iter::Iterator<Item = String>>,
             String
-        >(self, Box<dyn ::std::iter::Iterator<Item = String>>) -> TaskOptions;
+        >(self, Box<dyn ::std::iter::Iterator<Item = String>>) -> TaskSpawnOptions;
     }
 
     type TaskContext {
-        #layout(size = 32, align = 8);
+        #layout(size = 104, align = 8);
 
+        fn name(&self) -> Option<&String>;
+        fn tags(&self) -> &HashSet<String>;
         fn progress(&self) -> u64;
         fn set_progress(&self, u64);
         fn update(&self, u64);
@@ -117,6 +120,16 @@ type Option<::std::sync::Arc<TaskContext>> {
     fn is_some(&self) -> bool;
     fn unwrap(self) -> ::std::sync::Arc<TaskContext>;
     fn expect(self, &str) -> ::std::sync::Arc<TaskContext>;
+    
+    fn as_deref(&self) -> Option<&TaskContext>;
+}
+
+type Option<&TaskContext> {
+    #layout(size =  8, align = 8);
+
+    fn is_some(&self) -> bool;
+    fn unwrap(self) -> &TaskContext;
+    fn expect(self, &str) -> &TaskContext;
 }
 
 type crate::ffi::CxxAny {
@@ -136,6 +149,7 @@ type crate::ffi::CxxException {
     #cpp_value "0" "::task::ffi::CxxException";
 }
 
+// implimented in src/impl.cpp
 extern "C++" {
     impl crate::ffi::CxxException {
         fn what(&self) -> &str;

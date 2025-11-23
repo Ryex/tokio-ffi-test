@@ -8,6 +8,8 @@ task_spawn_error::task_spawn_error(String&& err)
     : std::runtime_error(std::string(reinterpret_cast<const char*>(err.as_bytes().as_ptr()), err.as_bytes().len()))
 {}
 
+task_canceled::task_canceled() : std::runtime_error(std::string("task canceled")) {}
+
 AbortHandle::AbortHandle(Option<FfiAbortHandle>&& handle) : m_handle(std::move(handle)) {}
 
 void AbortHandle::abort()

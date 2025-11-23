@@ -9,7 +9,6 @@
 #include <string_view>
 #include <type_traits>
 
-
 namespace rust_util {
 
 // To rust Str
@@ -129,6 +128,121 @@ class MappingIterator : public rust::std::iter::Iterator<U> {
         // You can construct Rust enum with fields in C++
         return rust::std::option::Option<U>::Some(m_map(value));
     }
+};
+
+namespace detail {
+
+// Implimentaiton detection
+template <typename...>
+using try_to_instantiate = void;
+
+using disregard_this = void;
+
+template <template <typename...> class Expression, typename Attempt, typename... Ts>
+struct is_detected_impl : std::false_type {};
+
+template <template <typename...> class Expression, typename... Ts>
+struct is_detected_impl<Expression, try_to_instantiate<Expression<Ts...>>, Ts...> : std::true_type {};
+
+template <template <typename...> class Expression, typename... Ts>
+constexpr bool is_detected = is_detected_impl<Expression, disregard_this, Ts...>::value;
+
+// useful types
+
+template <typename T>
+using rust_iter_t = decltype(std::declval<T>().iter());
+
+template <typename T>
+constexpr bool has_rust_iter = is_detected<rust_iter_t, T>;
+
+template <typename T>
+using rust_iter_next_t = decltype(std::declval<T>().next());
+
+template <typename T>
+constexpr bool has_rust_iter_next = is_detected<rust_iter_next_t, T>;
+
+template <typename T>
+using rust_unwrap_t = decltype(std::declval<T>().unwrap());
+
+template <typename T>
+using rust_iter_next_unwrap_t = decltype(std::declval<rust_iter_next_t<T>>().unwrap());
+
+struct end_tag {};
+}  // namespace detail
+
+/**
+ * @brief A c++ iterator over a type implimenting rust's std::iter::Iter trait.
+ * Incrementing the iterator calls next and stores the Option<T> value.
+ * Derefrencing the iterator calls unwrap on the stored value and thus can only ever be done *ONCE*
+ * per index/state.
+ *
+ * iterators are equal *ONLY* if they are both ended
+ *
+ * @tparam Iter the rust std::iter::Iter type
+ * @param iter the rust std::iter::Iter
+ * @return a c++ iterator
+ */
+template <typename Iter, typename std::enable_if<detail::has_rust_iter_next<Iter>, int>::type = 0>
+struct CxxIterator {
+    using OptionT = detail::rust_iter_next_t<Iter>;
+    using T = detail::rust_iter_next_unwrap_t<Iter>;
+
+    using value_type = T;
+    using difference_type = void;
+    using pointer = T;
+    using reference = T;
+    using iterator_category = std::forward_iterator_tag;
+
+   private:
+    Iter m_iter;
+    OptionT m_current;
+    bool m_ended;
+
+   public:
+    CxxIterator(Iter&& iter) : m_iter(std::move(iter)), m_current(m_iter.next()), m_ended(false) {}
+    CxxIterator(detail::end_tag end) : m_ended(true) {}
+    CxxIterator(const CxxIterator<Iter>& other) = delete;
+
+    CxxIterator<Iter>& operator++()
+    {
+        m_current = m_iter.next();
+        m_ended = m_current.matches_None();
+        return *this;
+    }
+
+    T operator*() { return m_current.unwrap(); }
+
+    bool operator!=(const CxxIterator<Iter>& other) { return m_ended != other.m_ended; }
+};
+
+/**
+ * @brief A wrapper to impliment a C++ iterator for a type with a `.iter()` function
+ * which returns a rust std::iter::Iter
+ *
+ * Incrementing the iterator calls next and stores the Option<T> value.
+ * Derefrencing the iterator calls unwrap on the stored value and thus can only ever be done *ONCE*
+ * per index/state.
+ *
+ * iterators are equal *ONLY* if they are both ended
+ *
+ * @tparam Iterable Iterable type
+ * @param source the iterable
+ * @return a wrapped interable
+ */
+template <typename Iterable, typename std::enable_if<detail::has_rust_iter<Iterable>, int>::type = 0>
+struct CxxIterable {
+    using Iter = detail::rust_iter_t<Iterable>;
+
+    using iterator = CxxIterator<Iter>;
+
+   private:
+    Iterable& m_source;
+
+   public:
+    CxxIterable(Iterable& source) : m_source(source) {}
+
+    iterator begin() { return CxxIterator<Iter>(m_source.iter()); }
+    iterator end() { return CxxIterator<Iter>(detail::end_tag()); }
 };
 
 }  // namespace collection

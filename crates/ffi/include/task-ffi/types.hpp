@@ -55,7 +55,7 @@ std::string debugFormat(T const& t)
     return std::to_string(t);
 }
 
-template <typename T, typename std::enable_if<!has_std_to_string<T> && has_to_string<T>>::type = 0>
+template <typename T, typename std::enable_if<!has_std_to_string<T> && has_to_string<T>, int>::type = 0>
 std::string debugFormat(T const& t)
 {
     return to_string(t);

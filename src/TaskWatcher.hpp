@@ -101,13 +101,13 @@ class TaskWatcher : public TaskWatcherBase {
 
     void setUpTask()
     {
+        m_result_taken = false;
         m_progress_handle =
             m_task->on_progress([this](task::RefTaskProgress progress) { this->emitProgress(progress.progress(), progress.maximum()); });
         m_continuation_handle = m_task->then([this](task::TaskResult<T> result) {
             {
                 std::lock_guard<std::mutex> guard(this->m_mutex);
                 this->m_result = std::move(result);
-                this->m_result_taken = false;
             }
             this->emitTaskFinished();
         });
