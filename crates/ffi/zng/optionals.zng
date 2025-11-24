@@ -1,0 +1,127 @@
+use crate::task::TaskSpawnOptions as TaskSpawnOptions;
+use crate::task::TaskOptions as TaskOptions;
+use crate::task::TaskMetadata as TaskMetadata;
+use crate::task::TaskId as TaskId;
+use crate::task::TaskError as TaskError;
+use crate::task::TaskContext as TaskContext;
+use crate::task::TaskProgress as TaskProgress;
+
+use crate::task::Task as Task;
+use crate::task::TaskSpawnError as TaskSpawnError;
+use crate::task::FfiError as FfiError;
+use crate::task::IoError as IoError;
+
+use crate::ffi::CxxAny as CxxAny;
+
+use ::std::result::Result as Result;
+use ::std::option::Option as Option;
+
+use ::std::string::String as String;
+
+
+// ----------------------
+// Optionals
+// -----------------------
+mod std {
+    mod option {
+        type Option<TaskId> {
+            #layout(size = 8, align = 8);
+            constructor None;
+            constructor Some(TaskId);
+
+            fn is_some(&self) -> bool;
+            fn unwrap(self) -> TaskId;
+            fn expect(self, &str) -> TaskId;
+        }
+
+        type Option<TaskSpawnOptions> {
+            #layout(size = 88, align = 8);
+            wellknown_traits(Debug);
+            
+            constructor None;
+            constructor Some(TaskSpawnOptions);
+
+            fn is_some(&self) -> bool;
+            fn unwrap(self) -> TaskSpawnOptions;
+            fn expect(self, &str) -> TaskSpawnOptions;
+        }
+
+        type Option<::tokio::task::AbortHandle> {
+            #layout(size = 8, align = 8);
+            fn is_some(&self) -> bool;
+            fn unwrap(self) -> ::tokio::task::AbortHandle;
+            fn expect(self, &str) -> ::tokio::task::AbortHandle;
+            fn as_ref(&self) -> Option<&::tokio::task::AbortHandle>;
+        }
+
+        type Option<&::tokio::task::AbortHandle> {
+            #layout(size = 8, align = 8);
+            fn is_some(&self) -> bool;
+            fn unwrap(self) -> &::tokio::task::AbortHandle;
+            fn expect(self, &str) -> &::tokio::task::AbortHandle;
+        }
+
+        type Option<&::tokio::task::JoinError> {
+            #layout(size = 8, align = 8);
+            fn is_some(&self) -> bool;
+            fn unwrap(self) -> &::tokio::task::JoinError;
+            fn expect(self, &str) -> &::tokio::task::JoinError;
+        }
+
+        type Option<&TaskError> {
+            #layout(size = 8, align = 8);
+            fn is_some(&self) -> bool;
+            fn unwrap(self) -> &TaskError;
+            fn expect(self, &str) -> &TaskError;
+        }
+
+        type Option<TaskError> {
+            #layout(size = 40, align = 8);
+            fn is_some(&self) -> bool;
+            fn unwrap(self) -> TaskError;
+            fn expect(self, &str) -> TaskError;
+            fn as_ref(&self) -> Option<&TaskError>;
+        }
+
+        type Option<&TaskSpawnError> {
+            #layout(size = 8, align = 8);
+            fn is_some(&self) -> bool;
+            fn unwrap(self) -> &TaskSpawnError;
+            fn expect(self, &str) -> &TaskSpawnError;
+        }
+
+        type Option<TaskSpawnError> {
+            #layout(size = 24, align = 8);
+            fn is_some(&self) -> bool;
+            fn unwrap(self) -> TaskSpawnError;
+            fn expect(self, &str) -> TaskSpawnError;
+            fn as_ref(&self) -> Option<&TaskSpawnError>;
+        }
+
+        type Option<&FfiError> {
+            #layout(size = 8, align = 8);
+            fn is_some(&self) -> bool;
+            fn unwrap(self) -> &FfiError;
+            fn expect(self, &str) -> &FfiError;
+        }
+
+        type Option<&crate::ffi::CxxException>{
+            #layout(size = 8, align = 8);
+            fn is_some(&self) -> bool;
+            fn unwrap(self) -> &crate::ffi::CxxException;
+            fn expect(self, &str) -> &crate::ffi::CxxException;
+        }
+
+        type Option<&IoError> {
+            #layout(size = 8, align = 8);
+            fn is_some(&self) -> bool;
+            fn unwrap(self) -> &IoError;
+            fn expect(self, &str) -> &IoError;
+        }
+
+        type Option<Box<dyn Fn(TaskId, &crate::task::TaskOptions) -> bool + Send>> {
+            #layout(size = 16, align = 8);
+            constructor Some(Box<dyn Fn(TaskId, &crate::task::TaskOptions) -> bool + Send>);
+        }
+    }
+}

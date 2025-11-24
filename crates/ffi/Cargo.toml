@@ -33,6 +33,7 @@ reqwest = { workspace = true, default-features = false, features = [
 thiserror = "2.0.12"
 futures-util = {version ="0.3.31", features = ["channel"]}
 pin-project = "1.1.10"
+tokio-util = { version = "0.7.17", features = ["rt"] }
 
 [build-dependencies]
 cc = "1.0"

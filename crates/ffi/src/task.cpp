@@ -1,5 +1,6 @@
 #include "task-ffi/task.hpp"
 #include <algorithm>
+#include "task-ffi/generated.h"
 
 namespace task {
 
@@ -24,6 +25,28 @@ void AbortHandle::abort()
 // -------------------------------------
 
 TaskManager::TaskManager() : m_manager(rust::crate::task::TaskManager::new_()) {}
+
+SubscriptionHandle TaskManager::subscribe(EventType event, std::function<void(Ref<TaskMetadata>)> callback)
+{
+    return m_manager.subscribe(std::move(event), Option<EventFilterFn>::None(),
+                               EventCallbackFn::make_box([callback = std::move(callback)](Ref<TaskMetadata> meta) {
+                                   callback(meta);
+                                   return Unit{};
+                               }));
+}
+SubscriptionHandle TaskManager::subscribe(EventType event,
+                                          std::function<void(Ref<TaskMetadata>)> callback,
+                                          std::function<bool(TaskId, Ref<RustTaskOptions>)> filter)
+{
+    return m_manager.subscribe(std::move(event),
+                               Option<EventFilterFn>::Some(EventFilterFn::make_box(
+                                   [filter = std::move(filter)](TaskId id, Ref<RustTaskOptions> options) { return filter(id, options); })),
+                               EventCallbackFn::make_box([callback = std::move(callback)](Ref<TaskMetadata> meta) {
+                                   callback(meta);
+                                   return Unit{};
+                               }));
+}
+void TaskManager::unsubscribe(SubscriptionHandle& handle) {}
 
 // -------------------------------------
 // Task creation

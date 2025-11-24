@@ -1,8 +1,7 @@
-// ---------------------------------------
-// Functions / Closures passed from C++
-// ---------------------------------------
-
 use crate::task::TaskSpawnOptions as TaskSpawnOptions;
+use crate::task::TaskOptions as TaskOptions;
+use crate::task::TaskMetadata as TaskMetadata;
+use crate::task::EventType as EventType;
 use crate::task::TaskId as TaskId;
 use crate::task::TaskError as TaskError;
 use crate::task::TaskContext as TaskContext;
@@ -19,162 +18,6 @@ use ::std::result::Result as Result;
 use ::std::option::Option as Option;
 
 use ::std::string::String as String;
-
-type Box<dyn Fn() -> Result<(), TaskError> + Send> {
-    #layout(size = 16, align = 8);
-}
-
-type Box<dyn Fn(&TaskContext) -> Result<(), TaskError> + Send> {
-    #layout(size = 16, align = 8);
-}
-
-type Box<dyn Fn() -> Result<CxxAny, TaskError> + Send> {
-    #layout(size = 16, align = 8);
-}
-
-type Box<dyn Fn(&TaskContext) -> Result<CxxAny, TaskError> + Send> {
-    #layout(size = 16, align = 8);
-}
-
-type Box<dyn Fn(Result<(), TaskError>) -> Result<(), TaskError> + Send> {
-    #layout(size = 16, align = 8);
-}
-
-type Box<dyn Fn(Result<(), TaskError>, &TaskContext) -> Result<(), TaskError> + Send> {
-    #layout(size = 16, align = 8);
-}
-
-type Box<dyn Fn(Result<(), TaskError>) -> Result<CxxAny, TaskError> + Send> {
-    #layout(size = 16, align = 8);
-}
-
-type Box<dyn Fn(Result<(), TaskError>, &TaskContext) -> Result<CxxAny, TaskError> + Send> {
-    #layout(size = 16, align = 8);
-}
-
-
-type Box<dyn Fn(Result<CxxAny, TaskError>) -> Result<(), TaskError> + Send> {
-    #layout(size = 16, align = 8);
-}
-
-type Box<dyn Fn(Result<CxxAny, TaskError>, &TaskContext) -> Result<(), TaskError> + Send> {
-    #layout(size = 16, align = 8);
-}
-
-type Box<dyn Fn(Result<CxxAny, TaskError>) -> Result<CxxAny, TaskError> + Send> {
-    #layout(size = 16, align = 8);
-}
-
-type Box<dyn Fn(Result<CxxAny, TaskError>, &TaskContext) -> Result<CxxAny, TaskError> + Send> {
-    #layout(size = 16, align = 8);
-}
-
-type Box<dyn Fn(&TaskProgress) + Send> {
-    #layout(size = 16, align = 8);
-}
-
-// ----------------------
-// Optionals
-// -----------------------
-
-mod std {
-    mod option {
-        type Option<TaskId> {
-            #layout(size = 8, align = 8);
-            constructor None;
-            constructor Some(TaskId);
-
-            fn is_some(&self) -> bool;
-            fn unwrap(self) -> TaskId;
-            fn expect(self, &str) -> TaskId;
-        }
-
-        type Option<TaskSpawnOptions> {
-            #layout(size = 88, align = 8);
-            wellknown_traits(Debug);
-            
-            constructor None;
-            constructor Some(TaskSpawnOptions);
-
-            fn is_some(&self) -> bool;
-            fn unwrap(self) -> TaskSpawnOptions;
-            fn expect(self, &str) -> TaskSpawnOptions;
-        }
-
-        type Option<::tokio::task::AbortHandle> {
-            #layout(size = 8, align = 8);
-            fn is_some(&self) -> bool;
-            fn unwrap(self) -> ::tokio::task::AbortHandle;
-            fn expect(self, &str) -> ::tokio::task::AbortHandle;
-            fn as_ref(&self) -> Option<&::tokio::task::AbortHandle>;
-        }
-
-        type Option<&::tokio::task::AbortHandle> {
-            #layout(size = 8, align = 8);
-            fn is_some(&self) -> bool;
-            fn unwrap(self) -> &::tokio::task::AbortHandle;
-            fn expect(self, &str) -> &::tokio::task::AbortHandle;
-        }
-
-        type Option<&::tokio::task::JoinError> {
-            #layout(size = 8, align = 8);
-            fn is_some(&self) -> bool;
-            fn unwrap(self) -> &::tokio::task::JoinError;
-            fn expect(self, &str) -> &::tokio::task::JoinError;
-        }
-
-        type Option<&TaskError> {
-            #layout(size = 8, align = 8);
-            fn is_some(&self) -> bool;
-            fn unwrap(self) -> &TaskError;
-            fn expect(self, &str) -> &TaskError;
-        }
-
-        type Option<TaskError> {
-            #layout(size = 40, align = 8);
-            fn is_some(&self) -> bool;
-            fn unwrap(self) -> TaskError;
-            fn expect(self, &str) -> TaskError;
-            fn as_ref(&self) -> Option<&TaskError>;
-        }
-
-        type Option<&TaskSpawnError> {
-            #layout(size = 8, align = 8);
-            fn is_some(&self) -> bool;
-            fn unwrap(self) -> &TaskSpawnError;
-            fn expect(self, &str) -> &TaskSpawnError;
-        }
-
-        type Option<TaskSpawnError> {
-            #layout(size = 24, align = 8);
-            fn is_some(&self) -> bool;
-            fn unwrap(self) -> TaskSpawnError;
-            fn expect(self, &str) -> TaskSpawnError;
-            fn as_ref(&self) -> Option<&TaskSpawnError>;
-        }
-
-        type Option<&FfiError> {
-            #layout(size = 8, align = 8);
-            fn is_some(&self) -> bool;
-            fn unwrap(self) -> &FfiError;
-            fn expect(self, &str) -> &FfiError;
-        }
-
-        type Option<&crate::ffi::CxxException>{
-            #layout(size = 8, align = 8);
-            fn is_some(&self) -> bool;
-            fn unwrap(self) -> &crate::ffi::CxxException;
-            fn expect(self, &str) -> &crate::ffi::CxxException;
-        }
-
-        type Option<&IoError> {
-            #layout(size = 8, align = 8);
-            fn is_some(&self) -> bool;
-            fn unwrap(self) -> &IoError;
-            fn expect(self, &str) -> &IoError;
-        }
-    }
-}
 
 
 mod crate::task {
@@ -200,11 +43,11 @@ mod crate::task {
     type FfiError {
         #layout(size = 40, align = 8);
 
-        constructor External(crate::ffi::CxxException);
+        constructor Exception(crate::ffi::CxxException);
 
         fn to_string(&self) -> String;
 
-        fn as_external(&self) -> Option<&crate::ffi::CxxException>;
+        fn as_exception(&self) -> Option<&crate::ffi::CxxException>;
         fn as_io(&self) -> Option<&IoError>;
     }
 
@@ -213,8 +56,12 @@ mod crate::task {
         fn to_string(&self) -> String;
     }
 
+    type SubscriptionHandle {
+        #layout(size = 8, align = 8);
+    }
+
     type TaskManager {
-        #layout(size = 16, align = 8);
+        #layout(size = 32, align = 8);
 
         fn new() -> TaskManager;
 
@@ -274,11 +121,22 @@ mod crate::task {
             > + Send>,
             Option<TaskSpawnOptions>,
         ) -> Box<Task<CxxAny>>;
+
+        fn subscribe<
+            Box<dyn Fn(TaskId, &crate::task::TaskOptions) -> bool + Send>,
+            Box<dyn Fn(&TaskMetadata) + Send>
+        >(
+            &self,
+            EventType,
+            Option<Box<dyn Fn(TaskId, &crate::task::TaskOptions) -> bool + Send>>,
+            Box<dyn Fn(&TaskMetadata) + Send>
+        ) -> SubscriptionHandle;
+
+        fn unsubscribe(&self, &SubscriptionHandle);
     }
 
-
     type Task<()> {
-        #layout(size = 80, align = 8);
+        #layout(size = 96, align = 8);
 
         fn id(&self) -> TaskId;
         fn manager(&self) -> &TaskManager;
@@ -368,7 +226,7 @@ mod crate::task {
 
 
     type Task<CxxAny> {
-        #layout(size = 80, align = 8);
+        #layout(size = 96, align = 8);
         fn id(&self) -> TaskId;
         fn manager(&self) -> &TaskManager;
         fn is_finished(&self) -> bool;

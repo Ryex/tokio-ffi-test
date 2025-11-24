@@ -1,4 +1,6 @@
 import "./std.zng";
+import "./closures.zng";
+import "./optionals.zng";
 import "./ffi.zng";
 import "./tasks.zng";
 import "./tokio.zng";

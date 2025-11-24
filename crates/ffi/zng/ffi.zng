@@ -1,7 +1,6 @@
 #cpp_additional_includes "
 #include <task-ffi/types.hpp>
 "
-
 use ::std::string::String as String;
 use ::std::vec::Vec as Vec;
 use ::std::option::Option as Option ;
@@ -9,6 +8,9 @@ use ::std::result::Result as Result;
 use ::std::collections::HashSet as HashSet;
 
 use crate::task::TaskSpawnOptions as TaskSpawnOptions;
+use crate::task::TaskOptions as TaskOptions;
+use crate::task::TaskMetadata as TaskMetadata;
+use crate::task::EventType as EventType;
 use crate::task::TaskId as TaskId;
 use crate::task::TaskError as TaskError;
 use crate::task::TaskContext as TaskContext;
@@ -105,6 +107,19 @@ mod crate::task {
         fn set_progress_maximum(&self, u64);
         fn is_canceled(&self) -> bool;
         fn cancel(&self);
+    }
+
+    type TaskOptions {
+        #layout(size = 72, align = 8);
+
+        field name (offset = 0, type = Option<String>);
+        field tags (offset= 24, type = HashSet<String>);
+    }
+   
+    type EventType {
+        #layout(size = 1, align = 1);
+        constructor Spawned;
+        constructor Finished;
     }
 }
 

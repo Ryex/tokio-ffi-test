@@ -1,0 +1,85 @@
+use crate::task::TaskSpawnOptions as TaskSpawnOptions;
+use crate::task::TaskOptions as TaskOptions;
+use crate::task::TaskMetadata as TaskMetadata;
+use crate::task::TaskId as TaskId;
+use crate::task::TaskError as TaskError;
+use crate::task::TaskContext as TaskContext;
+use crate::task::TaskProgress as TaskProgress;
+
+use crate::task::Task as Task;
+use crate::task::TaskSpawnError as TaskSpawnError;
+use crate::task::FfiError as FfiError;
+use crate::task::IoError as IoError;
+
+use crate::ffi::CxxAny as CxxAny;
+
+use ::std::result::Result as Result;
+use ::std::option::Option as Option;
+
+use ::std::string::String as String;
+
+// ---------------------------------------
+// Functions / Closures passed from C++
+// ---------------------------------------
+
+
+type Box<dyn Fn() -> Result<(), TaskError> + Send> {
+    #layout(size = 16, align = 8);
+}
+
+type Box<dyn Fn(&TaskContext) -> Result<(), TaskError> + Send> {
+    #layout(size = 16, align = 8);
+}
+
+type Box<dyn Fn() -> Result<CxxAny, TaskError> + Send> {
+    #layout(size = 16, align = 8);
+}
+
+type Box<dyn Fn(&TaskContext) -> Result<CxxAny, TaskError> + Send> {
+    #layout(size = 16, align = 8);
+}
+
+type Box<dyn Fn(Result<(), TaskError>) -> Result<(), TaskError> + Send> {
+    #layout(size = 16, align = 8);
+}
+
+type Box<dyn Fn(Result<(), TaskError>, &TaskContext) -> Result<(), TaskError> + Send> {
+    #layout(size = 16, align = 8);
+}
+
+type Box<dyn Fn(Result<(), TaskError>) -> Result<CxxAny, TaskError> + Send> {
+    #layout(size = 16, align = 8);
+}
+
+type Box<dyn Fn(Result<(), TaskError>, &TaskContext) -> Result<CxxAny, TaskError> + Send> {
+    #layout(size = 16, align = 8);
+}
+
+
+type Box<dyn Fn(Result<CxxAny, TaskError>) -> Result<(), TaskError> + Send> {
+    #layout(size = 16, align = 8);
+}
+
+type Box<dyn Fn(Result<CxxAny, TaskError>, &TaskContext) -> Result<(), TaskError> + Send> {
+    #layout(size = 16, align = 8);
+}
+
+type Box<dyn Fn(Result<CxxAny, TaskError>) -> Result<CxxAny, TaskError> + Send> {
+    #layout(size = 16, align = 8);
+}
+
+type Box<dyn Fn(Result<CxxAny, TaskError>, &TaskContext) -> Result<CxxAny, TaskError> + Send> {
+    #layout(size = 16, align = 8);
+}
+
+type Box<dyn Fn(&TaskProgress) + Send> {
+    #layout(size = 16, align = 8);
+}
+
+type Box<dyn Fn(TaskId, &TaskOptions) -> bool + Send> {
+    #layout(size = 16, align = 8);
+}
+
+type Box<dyn Fn(&TaskMetadata) + Send> {
+    #layout(size = 16, align = 8);
+}

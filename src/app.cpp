@@ -50,7 +50,7 @@ void Application::setUpTasks()
                 if (error.matches_TaskCanceled()) {
                     msg += " (This was a TaskError::TaskCanceled)";
                 } else if (auto inner_err = error.as_error(); inner_err.is_some()) {
-                    if (auto ex = inner_err.unwrap().as_external(); ex.is_some()) {
+                    if (auto ex = inner_err.unwrap().as_exception(); ex.is_some()) {
                         try {
                             std::rethrow_exception(ex.unwrap().cpp().exception());
                         } catch (const std::runtime_error& err) {
@@ -76,8 +76,46 @@ void Application::setUpTasks()
 
     static int task_counter = 0;
 
+    // subscribe to events form the task manager!
+    m_taskManager.subscribe(task::EventType::Spawned(), [](rust::Ref<task::TaskMetadata> meta) {
+        // this call back may be and likely *is* in another thread! have to be careful here if we want to interact with UI
+        // for now just debug prints but UI interaction will need a QObject emiting signals
+        auto dbg_line = qDebug();
+        dbg_line << "Task spawned!" << "Id:" << meta.id().as_u64() << "Name:";
+        if (auto name = meta.name(); name.matches_Some()) {
+            dbg_line << rust_util::to_string_view(name.unwrap());
+        } else {
+            dbg_line << "[Unnamed]";
+        }
+        dbg_line << "Tags:" << "[";
+        auto tags = meta.tags();
+        for (auto tag : rust_util::collection::CxxIterable(tags)) {
+            dbg_line << rust_util::to_string_view(tag);
+        }
+        dbg_line << "]";
+    });
+
+    // subscribe to events form the task manager! With a Filter!
+    m_taskManager.subscribe(
+        task::EventType::Finished(),
+        [](rust::Ref<task::TaskMetadata> meta) {
+            // this call back may be and likely *is* in another thread! have to be careful here if we want to interact with UI
+            // for now just debug prints but UI interaction will need a QObject emiting signals
+            auto dbg_line = qDebug();
+            dbg_line << "Task Finished!" << "Id:" << meta.id().as_u64();
+        },
+        // only subscribe to tasks with id's divisable by 3!
+        [](task::TaskId id, rust::Ref<task::RustTaskOptions> options) -> bool { 
+            return options.tags.contains("even-task-counter-tag"_rs); 
+        });
+
     m_mainWindow->setOnstart([this](QPointer<QPushButton> button) {
         button->setEnabled(false);
+
+        std::vector<std::string> tags{ "a-tag", "another-tag", "third_tag" };
+        if (task_counter % 2 == 0) {
+            tags.push_back("even-task-counter-tag");
+        }
 
         auto task = this->m_taskManager.newTask<std::int64_t>(
             [](task::RefTaskContext ctx) {
@@ -138,7 +176,7 @@ void Application::setUpTasks()
                 // return a value from our task
                 return nextTerm;
             },
-            task::TaskOptions("A_Task_Name").withTags(std::vector<std::string>{ "a-tag", "another-tag" }));
+            task::TaskOptions("A_Task_Name_" + std::to_string(task_counter)).withTags(tags));
         m_mainWindow->setLabel("Working ...");
         ++task_counter;
         if (task_counter % 10 == 0) {

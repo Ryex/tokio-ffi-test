@@ -126,6 +126,7 @@ fn check_and_generate_zng(zng_path: &Path, out_path: &Path) -> PathBuf {
                     .inputs
                     .iter()
                     .chain([&method.data.output])
+                    .chain(method.data.generics.iter())
                     .for_each(|ref_ty| {
                         if ty_missing(ref_ty) {
                             insert_missing(ref_ty, &mut missing);
@@ -138,13 +139,24 @@ fn check_and_generate_zng(zng_path: &Path, out_path: &Path) -> PathBuf {
                     insert_missing(ref_ty, &mut missing);
                 }
             });
+            if let zngur_def::RustType::Adt(adt) = &ty.ty {
+                adt.generics.iter().for_each(|ref_ty| {
+                    if ty_missing(ref_ty) {
+                        insert_missing(ref_ty, &mut missing);
+                    }
+                });
+            }
         });
         spec.funcs.iter().for_each(|func| {
-            func.inputs.iter().chain([&func.output]).for_each(|ref_ty| {
-                if ty_missing(ref_ty) {
-                    insert_missing(ref_ty, &mut missing);
-                }
-            });
+            func.inputs
+                .iter()
+                .chain([&func.output])
+                .chain(func.path.generics.iter())
+                .for_each(|ref_ty| {
+                    if ty_missing(ref_ty) {
+                        insert_missing(ref_ty, &mut missing);
+                    }
+                });
         });
         spec.traits.iter().for_each(|(trt, zngur_trt)| {
             if let zngur_def::RustTrait::Fn { inputs, output, .. } = trt {
@@ -159,6 +171,7 @@ fn check_and_generate_zng(zng_path: &Path, out_path: &Path) -> PathBuf {
                     .inputs
                     .iter()
                     .chain([&trt_method.output])
+                    .chain(trt_method.generics.iter())
                     .for_each(|ref_ty| {
                         if ty_missing(ref_ty) {
                             insert_missing(ref_ty, &mut missing);
@@ -189,8 +202,29 @@ fn check_and_generate_zng(zng_path: &Path, out_path: &Path) -> PathBuf {
         result_types
     };
 
+    let collect_option_types = |spec: &zngur_def::ZngurSpec| {
+        let mut option_types = HashSet::new();
+
+        spec.types.iter().for_each(|ty| {
+            if let zngur_def::RustType::Adt(adt) = &ty.ty
+                && let ["std", "option", "Option"] =
+                    &adt.path.iter().map(String::as_str).collect::<Vec<_>>()[..]
+            {
+                let [t] = adt.generics.iter().collect::<Vec<_>>()[..] else {
+                    build_rs::output::error(&format!(
+                        "More than one generic for Option Type `{adt}`"
+                    ));
+                    unreachable!();
+                };
+                option_types.insert((t.clone(), LayoutPolicy(ty.layout)));
+            }
+        });
+        option_types
+    };
+
     let missing_bindings = collect_missing(&spec);
     let result_types = collect_result_types(&spec);
+    let option_types = collect_option_types(&spec);
 
     let mut tt = TinyTemplate::new();
     tt.set_default_formatter(&tinytemplate::format_unescaped);
@@ -203,6 +237,11 @@ fn check_and_generate_zng(zng_path: &Path, out_path: &Path) -> PathBuf {
             result_types
                 .iter()
                 .map(call_with_tt(&tt, &bind_result_inspection)),
+        )
+        .chain(
+            option_types
+                .iter()
+                .map(call_with_tt(&tt, &bind_option_inspection)),
         )
         .collect::<Vec<_>>();
 
@@ -312,6 +351,7 @@ fn check_and_generate_zng(zng_path: &Path, out_path: &Path) -> PathBuf {
                 .inputs
                 .iter()
                 .chain([&method.data.output])
+                .chain(method.data.generics.iter())
                 .for_each(|ref_ty| {
                     if matches!(ref_ty, zngur_def::RustType::Raw(_, _)) {
                         build_rs::output::warning(&format!(
@@ -331,27 +371,51 @@ fn check_and_generate_zng(zng_path: &Path, out_path: &Path) -> PathBuf {
                     }
                 });
         });
+        if let zngur_def::RustType::Adt(adt) = &ty.ty {
+            adt.generics.iter().for_each(|ref_ty| {
+                if matches!(ref_ty, zngur_def::RustType::Raw(_, _)) {
+                    build_rs::output::warning(&format!(
+                        "Final spec containes Raw type `{}` in generic on `{}`",
+                        &ref_ty, &ty.ty
+                    ));
+                }
+                if matches!(
+                    ref_ty,
+                    zngur_def::RustType::Ref(_mut,  boxed)
+                      if matches!(**boxed, zngur_def::RustType::Ref(_, _))
+                ) {
+                    build_rs::output::error(&format!(
+                        "Final spec containes double ref type `{}` in generic on `{}`",
+                        &ref_ty, &ty.ty
+                    ));
+                }
+            });
+        }
     });
 
     final_spec.funcs.iter().for_each(|func| {
-        func.inputs.iter().chain([&func.output]).for_each(|ref_ty| {
-            if matches!(ref_ty, zngur_def::RustType::Raw(_, _)) {
-                build_rs::output::warning(&format!(
-                    "Final spec containes Raw type `{}` in function `{}` ",
-                    &ref_ty, &func.path,
-                ));
-            }
-            if matches!(
-                ref_ty,
-                zngur_def::RustType::Ref(_mut,  boxed)
-                  if matches!(**boxed, zngur_def::RustType::Ref(_, _))
-            ) {
-                build_rs::output::error(&format!(
-                    "Final spec containes double ref type `{}` in function `{}`",
-                    &ref_ty, &func.path
-                ));
-            }
-        });
+        func.inputs
+            .iter()
+            .chain([&func.output])
+            .chain(func.path.generics.iter())
+            .for_each(|ref_ty| {
+                if matches!(ref_ty, zngur_def::RustType::Raw(_, _)) {
+                    build_rs::output::warning(&format!(
+                        "Final spec containes Raw type `{}` in function `{}` ",
+                        &ref_ty, &func.path,
+                    ));
+                }
+                if matches!(
+                    ref_ty,
+                    zngur_def::RustType::Ref(_mut,  boxed)
+                      if matches!(**boxed, zngur_def::RustType::Ref(_, _))
+                ) {
+                    build_rs::output::error(&format!(
+                        "Final spec containes double ref type `{}` in function `{}`",
+                        &ref_ty, &func.path
+                    ));
+                }
+            });
     });
 
     final_spec.traits.iter().for_each(|(trt, zngur_trt)| {
@@ -386,6 +450,7 @@ fn check_and_generate_zng(zng_path: &Path, out_path: &Path) -> PathBuf {
                 .inputs
                 .iter()
                 .chain([&trt_method.output])
+                .chain(trt_method.generics.iter())
                 .for_each(|ref_ty| {
                     if matches!(ref_ty, zngur_def::RustType::Raw(_, _)) {
                         build_rs::output::warning(&format!(
@@ -566,21 +631,54 @@ mod wellknown_templates {
         OPTION {
             pub ty: String,
             pub size: usize,
+            pub layout: Option<String>,
             pub is_ref: bool,
             pub is_primitive: bool,
+            pub is_debug_t: bool,
+            pub inspect_access: bool,
         } => indoc! {r#"
-            type ::std::option::Option<{{ if is_ref }}&{{ endif }} { ty } > \{
+            type ::std::option::Option<{ ty }> \{
+                {{ if layout }}
+                { layout }
+                {{ else }}
                 #layout(size = { size }, align = 8);
+                {{ endif }}
+
                 {{ if is_primitive }}
                 wellknown_traits(Debug, Copy);
+                {{ else }}
+                {{ if is_debug_t }}
+                wellknown_traits(Debug);
+                {{ endif }}
                 {{ endif }}
                 
                 constructor None;
-                constructor Some({{ if is_ref }}&{{ endif }} { ty });
+                constructor Some( { ty });
 
-                fn unwrap(self) -> {{ if is_ref }}&{{ endif }} { ty };
-                fn expect(self, &str) -> {{ if is_ref }}&{{ endif }} { ty };
+                fn unwrap(self) ->  { ty };
+                fn unwrap_unchecked(self) ->  { ty };
+                fn expect(self, &str) ->  { ty };
+
+                fn is_some(&self) -> bool;
+                fn is_none(&self) -> bool;
+
+                fn is_some_and(self, Box<dyn Fn({ ty }) -> bool>) -> bool;
+                fn is_none_or(self, Box<dyn Fn({ ty }) -> bool>) -> bool;
+
+                {{ if inspect_access }}
+                fn inspect(self, Box<dyn Fn(&{ ty })> ) ->::std::option::Option<{ ty }>;
+                {{ endif }}
             }
+
+            type Box<dyn Fn({ ty }) -> bool> \{
+                #layout(size = 16, align = 8);
+            }
+
+            {{ if inspect_access }}
+            type Box<dyn Fn(&{ ty })> \{
+                #layout(size = 16, align = 8);
+            }
+            {{ endif }}
         "#};
         STRING {} => indoc! {r#"
             mod std \{
@@ -794,6 +892,9 @@ fn bind_wellknown_missing_zng(tt: &TinyTemplate, ty: &zngur_def::RustType) -> Op
                                 size: size_for_option_rust_primative(p),
                                 is_primitive: true,
                                 is_ref: false,
+                                is_debug_t: true,
+                                layout: None,
+                                inspect_access: true,
                             })
                             .render(tt)
                             .unwrap(),
@@ -808,6 +909,9 @@ fn bind_wellknown_missing_zng(tt: &TinyTemplate, ty: &zngur_def::RustType) -> Op
                                 size: 16,
                                 is_primitive: matches!(**ty, zngur_def::RustType::Primitive(_)),
                                 is_ref: true,
+                                is_debug_t: t_is_debug(ty),
+                                layout: None,
+                                inspect_access: false,
                             })
                             .render(tt)
                             .unwrap(),
@@ -823,6 +927,9 @@ fn bind_wellknown_missing_zng(tt: &TinyTemplate, ty: &zngur_def::RustType) -> Op
                                 ty: ty_name,
                                 is_primitive: matches!(*ty, zngur_def::RustType::Primitive(_)),
                                 is_ref: true,
+                                is_debug_t: t_is_debug(ty),
+                                layout: None,
+                                inspect_access: false,
                             })
                             .render(tt)
                             .unwrap(),
@@ -842,9 +949,9 @@ fn bind_wellknown_missing_zng(tt: &TinyTemplate, ty: &zngur_def::RustType) -> Op
 
 fn bind_result_inspection(
     tt: &TinyTemplate,
-    ty_err: &(zngur_def::RustType, zngur_def::RustType, LayoutPolicy),
+    ty_err_layout: &(zngur_def::RustType, zngur_def::RustType, LayoutPolicy),
 ) -> String {
-    let (ty, err, layout) = ty_err;
+    let (ty, err, layout) = ty_err_layout;
 
     let ty_name = ty.to_string();
     let err_name = err.to_string();
@@ -866,6 +973,37 @@ fn bind_result_inspection(
         err: err_name,
         inspect_access,
         inspect_err_access,
+        is_debug_t: is_debug,
+    }
+    .render(tt)
+    .unwrap()
+}
+
+fn bind_option_inspection(
+    tt: &TinyTemplate,
+    ty_layout: &(zngur_def::RustType, LayoutPolicy),
+) -> String {
+    let (ty, layout) = ty_layout;
+
+    let ty_name = ty.to_string();
+    let is_debug = t_is_debug(ty);
+    let inspect_access = !is_ref(ty);
+    build_rs::output::warning(&format!(
+        "Gnerating templated binding for `::std::option::Option<{ty}>`. inspect: {inspect_access} debug: {is_debug}",
+    ));
+    wellknown_templates::OPTION {
+        layout: Some(match layout.0 {
+            zngur_def::LayoutPolicy::StackAllocated { size, align } => {
+                format!("#layout(size = {size}, align = {align});")
+            }
+            zngur_def::LayoutPolicy::HeapAllocated => "#heap_allocated;".to_string(),
+            zngur_def::LayoutPolicy::OnlyByRef => "#only_by_ref;".to_string(),
+        }),
+        is_primitive: is_primitive(ty),
+        is_ref: is_ref(ty),
+        size: 0,
+        ty: ty_name,
+        inspect_access,
         is_debug_t: is_debug,
     }
     .render(tt)
@@ -987,7 +1125,7 @@ fn t_is_debug(ty: &zngur_def::RustType) -> bool {
                     let generic = ty_path.generics.first().unwrap();
                     t_is_debug(generic)
                 }
-                _ => { false }
+                _ => false,
             }
         }
         zngur_def::RustType::Tuple(tys) => tys.iter().all(t_is_debug),

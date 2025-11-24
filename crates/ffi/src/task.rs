@@ -13,7 +13,10 @@ use std::{
 use thiserror::Error;
 
 use tokio::{
-    sync::watch::{Receiver, Sender},
+    sync::{
+        mpsc::Sender as MSPCSender,
+        watch::{Receiver as WatchReceiver, Sender as WatchSender},
+    },
     task::{AbortHandle, JoinHandle},
 };
 
@@ -25,6 +28,7 @@ pub mod current {
 
     use super::*;
 
+    /// Thread Local storage context for current tasks [`Id`] and [`TaskContext`]
     struct RuntimeContext {
         current_task_id: Cell<Option<TaskId>>,
         current_task_ctx: Cell<Option<Arc<TaskContext>>>,
@@ -128,6 +132,7 @@ impl std::fmt::Display for TaskId {
 }
 
 impl TaskId {
+    /// Advance the atomic Id counter and return a new non zero Id
     pub(crate) fn next() -> Self {
         static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -141,6 +146,7 @@ impl TaskId {
         }
     }
 
+    /// return this Id as a u64 number
     pub fn as_u64(&self) -> u64 {
         self.0.get()
     }
@@ -155,12 +161,13 @@ pub enum FfiError {
     #[error("error writing to file '{:?}' : {}", .0.path, .0.error)]
     FileWrite(IoError),
     #[error("Error {}", .0.what())]
-    External(crate::ffi::CxxException),
+    Exception(crate::ffi::CxxException),
 }
 
 impl FfiError {
-    pub fn as_external(&self) -> Option<&crate::ffi::CxxException> {
-        if let Self::External(external) = &self {
+    /// Return a Some(&Cxxxception) is this error is form an exception
+    pub fn as_exception(&self) -> Option<&crate::ffi::CxxException> {
+        if let Self::Exception(external) = &self {
             Some(external)
         } else {
             None
@@ -258,26 +265,39 @@ impl TaskError {
 }
 
 #[derive(Debug, Default, Copy, Clone)]
+/// Represents a Task's progress event
+///
+/// * `progress`: the current progress
+/// * `maximum`: the maximum progress
 pub struct TaskProgress {
     progress: u64,
     maximum: u64,
 }
 
 impl TaskProgress {
+    /// The current task progrss
     pub fn progress(&self) -> u64 {
         self.progress
     }
+    /// The maximum progress value
     pub fn maximum(&self) -> u64 {
         self.maximum
     }
 }
 
 #[derive(Debug, Clone)]
+/// Stored Task metadata
+///
+/// * `id`: Teh task Id
+/// * `abort_handle`: a low level abord handle for the task
+/// * `progress`: the progess event sender if the task has one
+/// * `options`: options the task was spawned with (name, tags, ...)
+/// * `context`: the task's context
 pub struct TaskMetadata {
     id: TaskId,
     abort_handle: tokio::task::AbortHandle,
     #[allow(dead_code)]
-    progress: Option<Receiver<TaskProgress>>,
+    progress: Option<WatchReceiver<TaskProgress>>,
     options: TaskOptions,
     #[allow(dead_code)]
     context: Arc<TaskContext>,
@@ -309,7 +329,7 @@ impl TaskMetadata {
 pub struct TaskSpawnOptions {
     name: Option<String>,
     tags: HashSet<String>,
-    progress: Option<Receiver<TaskProgress>>,
+    progress: Option<WatchReceiver<TaskProgress>>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -391,7 +411,7 @@ impl TaskSpawnOptions {
         self
     }
 
-    pub fn with_progress(mut self, progress: Receiver<TaskProgress>) -> Self {
+    pub fn with_progress(mut self, progress: WatchReceiver<TaskProgress>) -> Self {
         self.progress = Some(progress);
         self
     }
@@ -407,7 +427,7 @@ impl From<TaskSpawnOptions> for TaskOptions {
 pub struct TaskContext {
     progress: AtomicU64,
     progress_maximum: AtomicU64,
-    progress_sender: Option<Sender<TaskProgress>>,
+    progress_sender: Option<WatchSender<TaskProgress>>,
     cancel: AtomicBool,
     options: TaskOptions,
 }
@@ -423,7 +443,7 @@ impl TaskContext {
         })
     }
 
-    pub fn with_progress(options: TaskOptions, sender: Sender<TaskProgress>) -> Arc<Self> {
+    pub fn with_progress(options: TaskOptions, sender: WatchSender<TaskProgress>) -> Arc<Self> {
         Arc::new(TaskContext {
             progress: AtomicU64::new(0),
             progress_maximum: AtomicU64::new(0),
@@ -482,7 +502,7 @@ impl TaskContext {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct TaskListing(Arc<Mutex<HashMap<TaskId, Arc<TaskMetadata>>>>);
+pub struct TaskListing(pub(crate) Arc<Mutex<HashMap<TaskId, Arc<TaskMetadata>>>>);
 
 impl TaskListing {
     pub fn new() -> Self {
@@ -512,27 +532,188 @@ impl TaskListing {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct SubscriptionHandle(pub(crate) NonZeroU64);
+
+impl Default for SubscriptionHandle {
+    fn default() -> Self {
+        static NEXT_ID: AtomicU64 = AtomicU64::new(1);
+        loop {
+            let id = NEXT_ID.fetch_add(1, Ordering::SeqCst);
+            if let Some(id) = NonZeroU64::new(id) {
+                return SubscriptionHandle(id);
+            }
+        }
+    }
+}
+
+impl SubscriptionHandle {
+    fn new() -> Self {
+        Self::default()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum EventType {
+    Spawned,
+    Finished,
+}
+
+pub struct EventSubscription {
+    pub handle: SubscriptionHandle,
+    pub ty: EventType,
+    pub filter: Option<Box<dyn Fn(TaskId, &TaskOptions) -> bool + Send>>,
+    pub callback: Box<dyn Fn(&TaskMetadata) + Send>,
+}
+
+impl std::fmt::Debug for EventSubscription {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "EventSubscription({:?}, {:?}, filter: {})",
+            &self.handle,
+            &self.ty,
+            self.filter.is_some()
+        )
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct SubscriptionListingInner {
+    listing: HashMap<SubscriptionHandle, EventSubscription>,
+    indexes: HashMap<EventType, HashSet<SubscriptionHandle>>,
+}
+
+impl SubscriptionListingInner {
+    pub fn new() -> Self {
+        SubscriptionListingInner::default()
+    }
+
+    pub fn insert(
+        &mut self,
+        handle: SubscriptionHandle,
+        subscription: EventSubscription,
+    ) -> Option<EventSubscription> {
+        // remove the event from the indexes if it exists
+        self.indexes.iter_mut().for_each(|(_ty, set)| {
+            set.remove(&handle);
+        });
+        self.indexes
+            .entry(subscription.ty)
+            .or_default()
+            .insert(handle);
+        self.listing.insert(handle, subscription)
+    }
+
+    pub fn remove(&mut self, handle: &SubscriptionHandle) -> Option<EventSubscription> {
+        self.indexes.iter_mut().for_each(|(_ty, set)| {
+            set.remove(handle);
+        });
+        self.listing.remove(handle)
+    }
+
+    pub fn send_event(&self, event: EventType, meta: &TaskMetadata) {
+        let handles = self.indexes.get(&event).cloned().unwrap_or_default();
+
+        let subscriptions = self.listing.iter().filter_map(|(hdl, sub)| {
+            if handles.contains(hdl) {
+                Some(sub)
+            } else {
+                None
+            }
+        });
+        for subscription in subscriptions {
+            if let Some(filter) = &subscription.filter {
+                if !filter(meta.id, &meta.options) {
+                    continue;
+                }
+            }
+            (subscription.callback)(meta);
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct SubscriptionListing {
+    inner: Arc<Mutex<SubscriptionListingInner>>,
+}
+
+impl SubscriptionListing {
+    pub fn new() -> Self {
+        SubscriptionListing::default()
+    }
+
+    pub fn insert(&self, handle: SubscriptionHandle, subscription: EventSubscription) {
+        self.inner
+            .lock()
+            .expect("subscription listing lock poisoned")
+            .insert(handle, subscription);
+    }
+
+    pub fn remove(&self, handle: &SubscriptionHandle) {
+        self.inner
+            .lock()
+            .expect("subscription listing lock poisoned")
+            .remove(&handle);
+    }
+
+    pub fn send_event(&self, event: EventType, meta: &TaskMetadata) {
+        self.inner
+            .lock()
+            .expect("subscription listing lock poisoned")
+            .send_event(event, meta);
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct TaskEvent {
+    pub ty: EventType,
+    pub meta: Arc<TaskMetadata>,
+}
+
 #[derive(Clone)]
 pub struct TaskManager {
     runtime: Arc<tokio::runtime::Runtime>,
     tasks: TaskListing,
+    subscriptions: SubscriptionListing,
+    event_sender: MSPCSender<TaskEvent>,
 }
+
+pub const EVENT_BUFFER_SIZE: Option<&'static str> = option_env!("TOKIO_TASK_EVENT_BUFFER_SIZE");
 
 impl Default for TaskManager {
     fn default() -> Self {
+        let runtime = Arc::new(
+            tokio::runtime::Builder::new_multi_thread()
+                .thread_name_fn(|| {
+                    static ATOMIC_ID: AtomicUsize = AtomicUsize::new(1);
+                    let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
+                    format!("task-api-{}", id)
+                })
+                .enable_all()
+                .build()
+                .unwrap(),
+        );
+        let subscriptions = SubscriptionListing::new();
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<TaskEvent>(
+            EVENT_BUFFER_SIZE
+                .map(str::parse::<usize>)
+                .transpose()
+                .ok()
+                .flatten()
+                .unwrap_or(100),
+        );
+        let subs = subscriptions.clone();
+        runtime.spawn(async move {
+            while let Some(event) = rx.recv().await {
+                subs.send_event(event.ty, &event.meta);
+            }
+        });
         TaskManager {
-            runtime: Arc::new(
-                tokio::runtime::Builder::new_multi_thread()
-                    .thread_name_fn(|| {
-                        static ATOMIC_ID: AtomicUsize = AtomicUsize::new(1);
-                        let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
-                        format!("task-api-{}", id)
-                    })
-                    .enable_all()
-                    .build()
-                    .unwrap(),
-            ),
+            runtime,
             tasks: TaskListing::new(),
+            subscriptions,
+            event_sender: tx,
         }
     }
 }
@@ -577,17 +758,24 @@ impl TaskManager {
         T: Send + 'static,
         F: Future<Output = Result<T, TaskError>> + Send + 'static,
     {
+        // make task
         let id = TaskId::next();
-        let tasks = self.tasks.clone();
-        let task = self.runtime.spawn(TaskFuture::new(
-            async move {
-                let ret = fut.await;
-                tasks.remove(id);
-                ret
-            },
-            id,
-            ctx.clone(),
-        ));
+        let task_tracker = Arc::new(tokio::sync::Notify::new());
+        let task = {
+            let ctx = ctx.clone();
+            let task_tracker = task_tracker.clone();
+            // spawn a tracked task
+            self.runtime.spawn(TaskFuture::new(
+                async move {
+                    let ret = fut.await;
+                    task_tracker.notify_one();
+                    ret
+                },
+                id,
+                ctx.clone(),
+            ))
+        };
+        // build task metadata
         let options = options.unwrap_or_default();
         let meta = Arc::new(TaskMetadata {
             id,
@@ -596,7 +784,30 @@ impl TaskManager {
             options: options.to_options(),
             progress: options.progress,
         });
+        // store metadata on the task
         self.tasks.insert(meta.id, meta.clone());
+        // send the task spawned event
+        let _ = self.event_sender.blocking_send(TaskEvent {
+            ty: EventType::Spawned,
+            meta: meta.clone(),
+        });
+        {
+            let meta = meta.clone();
+            let tasks = self.tasks.clone();
+            let event_sender = self.event_sender.clone();
+            self.runtime.spawn(async move {
+                // wait for task to finisk
+                task_tracker.notified().await;
+                // send task finished event
+                let _ = event_sender
+                    .send(TaskEvent {
+                        ty: EventType::Finished,
+                        meta,
+                    })
+                    .await;
+                tasks.remove(id);
+            });
+        }
         (id, task, meta)
     }
 
@@ -611,29 +822,60 @@ impl TaskManager {
         T: Send + 'static,
         F: FnOnce() -> Result<T, TaskError> + Send + 'static,
     {
+        // make task
         let id = TaskId::next();
-        let tasks = self.tasks.clone();
-        let context = ctx.clone();
-        let task = self.runtime.spawn(async move {
-            let ret = tokio::task::spawn_blocking(move || {
-                let _guard = TaskGuard::enter(id, ctx.clone());
-                fun()
+        let task_tracker = Arc::new(tokio::sync::Notify::new());
+        let task = {
+            let ctx = ctx.clone();
+            let task_tracker = task_tracker.clone();
+            // spawn a tracked task
+            self.runtime.spawn(async move {
+                // spawn a blocking function in a special thread to avoid blocking the runtime
+                let ret = tokio::task::spawn_blocking(move || {
+                    // same gurad as a TaskFuture in a blocking context
+                    let _guard = TaskGuard::enter(id, ctx.clone());
+                    fun()
+                })
+                .await
+                .map_err(Into::<TaskError>::into)
+                .and_then(|ret| ret);
+                task_tracker.notify_one();
+                ret
             })
-            .await
-            .map_err(Into::<TaskError>::into)
-            .and_then(|ret| ret);
-            tasks.remove(id);
-            ret
-        });
+        };
+        // build task metadata
         let options = options.unwrap_or_default();
         let meta = Arc::new(TaskMetadata {
             id,
             abort_handle: task.abort_handle(),
-            context,
+            context: ctx,
             options: options.to_options(),
             progress: options.progress,
         });
+        // store metadata on the task
         self.tasks.insert(meta.id, meta.clone());
+        // send the task spawned event
+        let _ = self.event_sender.blocking_send(TaskEvent {
+            ty: EventType::Spawned,
+            meta: meta.clone(),
+        });
+        {
+            let meta = meta.clone();
+            let tasks = self.tasks.clone();
+            let event_sender = self.event_sender.clone();
+            self.runtime.spawn(async move {
+                // wait for task to finisk
+                task_tracker.notified().await;
+                // send task finished event
+                let _ = event_sender
+                    .send(TaskEvent {
+                        ty: EventType::Finished,
+                        meta,
+                    })
+                    .await;
+                tasks.remove(id);
+            });
+        }
         (id, task, meta)
     }
 
@@ -654,7 +896,11 @@ impl TaskManager {
         Task::blocking(self, f, options)
     }
 
-    pub fn new_task_with_ctx<T, F, R>(&self, f: F, options: Option<TaskSpawnOptions>) -> Box<Task<T>>
+    pub fn new_task_with_ctx<T, F, R>(
+        &self,
+        f: F,
+        options: Option<TaskSpawnOptions>,
+    ) -> Box<Task<T>>
     where
         T: Send + 'static,
         F: FnOnce(&TaskContext) -> R,
@@ -663,12 +909,44 @@ impl TaskManager {
         Task::with_ctx(self, f, options)
     }
 
-    pub fn new_blocking_with_ctx<T, F>(&self, f: F, options: Option<TaskSpawnOptions>) -> Box<Task<T>>
+    pub fn new_blocking_with_ctx<T, F>(
+        &self,
+        f: F,
+        options: Option<TaskSpawnOptions>,
+    ) -> Box<Task<T>>
     where
         T: Send + 'static,
         F: FnOnce(&TaskContext) -> Result<T, TaskError> + Send + 'static,
     {
         Task::blocking_with_progress(self, f, options)
+    }
+
+    pub fn subscribe<Filter, Callback>(
+        &self,
+        event: EventType,
+        filter: Option<Filter>,
+        callback: Callback,
+    ) -> SubscriptionHandle
+    where
+        Filter: Fn(TaskId, &TaskOptions) -> bool + Send + 'static,
+        Callback: Fn(&TaskMetadata) + Send + 'static,
+    {
+        let handle = SubscriptionHandle::new();
+        self.subscriptions.insert(
+            handle,
+            EventSubscription {
+                handle,
+                ty: event,
+                filter: filter
+                    .map(|f| -> Box<dyn Fn(TaskId, &TaskOptions) -> bool + Send> { Box::new(f) }),
+                callback: Box::new(callback),
+            },
+        );
+        handle
+    }
+
+    pub fn unsubscribe(&self, handle: &SubscriptionHandle) {
+        self.subscriptions.remove(handle);
     }
 }
 
@@ -768,7 +1046,7 @@ pub struct Task<T: Send + 'static> {
     meta: Arc<TaskMetadata>,
     handle: Mutex<Option<TaskHandle<Result<T, TaskError>>>>,
     ctx: Arc<TaskContext>,
-    progress: Option<Receiver<TaskProgress>>,
+    progress: Option<WatchReceiver<TaskProgress>>,
 }
 
 impl<T: Send + 'static> Task<T> {
@@ -949,11 +1227,7 @@ impl<T: Send + 'static> Task<T> {
                 .and_then(|ret| ret)
             },
             ctx.clone(),
-            Some(
-                options
-                    .unwrap_or_default()
-                    .with_progress(prx.clone()),
-            ),
+            Some(options.unwrap_or_default().with_progress(prx.clone())),
         );
         Ok(Box::new(Task {
             id,

@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <functional>
 #include <iterator>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -191,27 +192,35 @@ struct CxxIterator {
     using difference_type = void;
     using pointer = T;
     using reference = T;
-    using iterator_category = std::forward_iterator_tag;
+    using iterator_category = std::input_iterator_tag;
 
    private:
     Iter m_iter;
-    OptionT m_current;
+    std::optional<T> m_current;
     bool m_ended;
 
    public:
-    CxxIterator(Iter&& iter) : m_iter(std::move(iter)), m_current(m_iter.next()), m_ended(false) {}
+    CxxIterator(Iter&& iter) : m_iter(std::move(iter)), m_current(std::nullopt), m_ended(false) {
+        ++(*this);
+    }
     CxxIterator(detail::end_tag end) : m_ended(true) {}
     CxxIterator(const CxxIterator<Iter>& other) = delete;
 
     CxxIterator<Iter>& operator++()
     {
-        m_current = m_iter.next();
-        m_ended = m_current.matches_None();
+        auto current = m_iter.next();
+        m_ended = current.matches_None();
+        if (!m_ended) {
+            m_current = current.unwrap();
+        } else {
+            m_current = std::nullopt;
+        }
         return *this;
     }
 
-    T operator*() { return m_current.unwrap(); }
+    T operator*() { return *m_current; }
 
+    bool operator==(const CxxIterator<Iter>& other) { return m_ended == other.m_ended; }
     bool operator!=(const CxxIterator<Iter>& other) { return m_ended != other.m_ended; }
 };
 

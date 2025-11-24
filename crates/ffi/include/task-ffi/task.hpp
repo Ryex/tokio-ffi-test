@@ -55,10 +55,14 @@ using TaskProgress = rust::crate::task::TaskProgress;
 using RefTaskProgress = Ref<TaskProgress>;
 
 using TaskSpawnOptions = rust::crate::task::TaskSpawnOptions;
+using RustTaskOptions = rust::crate::task::TaskOptions;
+using TaskMetadata = rust::crate::task::TaskMetadata;
+using SubscriptionHandle = rust::crate::task::SubscriptionHandle;
 using FfiError = rust::crate::task::FfiError;
 using FfiAbortHandle = rust::tokio::task::AbortHandle;
 using TokioId = rust::tokio::task::Id;
 using TaskId = rust::crate::task::TaskId;
+using EventType = rust::crate::task::EventType;
 
 template <typename T, typename U>
 using TaskContFn = BoxDyn<Fn<Result<T, TaskError>, Result<U, TaskError>>, Send>;
@@ -68,6 +72,9 @@ using TaskContCtxFn = BoxDyn<Fn<Result<T, TaskError>, Ref<TaskContext>, Result<U
 
 template <typename T>
 using InspectFn = BoxDyn<Fn<Ref<T>, Unit>>;
+
+using EventFilterFn = BoxDyn<Fn<TaskId, Ref<RustTaskOptions>, Bool>, Send>;
+using EventCallbackFn = BoxDyn<Fn<Ref<TaskMetadata>, Unit>, Send>;
 
 namespace current {
 
@@ -478,6 +485,12 @@ class TaskManager {
     Task<T> newTask(std::function<T()>, std::optional<TaskOptions> options = std::nullopt);
     template <typename T>
     Task<T> newTask(std::function<T(RefTaskContext)>, std::optional<TaskOptions> options = std::nullopt);
+
+    SubscriptionHandle subscribe(EventType event, std::function<void(Ref<TaskMetadata>)> callback);
+    SubscriptionHandle subscribe(EventType event,
+                                 std::function<void(Ref<TaskMetadata>)> callback,
+                                 std::function<bool(TaskId, Ref<RustTaskOptions>)> filter);
+    void unsubscribe(SubscriptionHandle& handle);
 };
 
 inline Option<TaskSpawnOptions> transform_options_ffi(std::optional<task::TaskOptions>& options)
@@ -511,11 +524,11 @@ inline Result<RustCxxAny, TaskError> trycatch_any(Try&& func, Args&&... args)
             throw;  // rethrow to ensure we capture full derived type
         } catch (...) {
             return Result<RustCxxAny, TaskError>::Err(TaskError::Error(
-                FfiError::External(rust::ZngurCppOpaqueOwnedObject::build<task::ffi::CxxException>(std::current_exception(), what))));
+                FfiError::Exception(rust::ZngurCppOpaqueOwnedObject::build<task::ffi::CxxException>(std::current_exception(), what))));
         }
     } catch (...) {
         return Result<RustCxxAny, TaskError>::Err(TaskError::Error(
-            FfiError::External(rust::ZngurCppOpaqueOwnedObject::build<task::ffi::CxxException>(std::current_exception()))));
+            FfiError::Exception(rust::ZngurCppOpaqueOwnedObject::build<task::ffi::CxxException>(std::current_exception()))));
     }
 }
 
@@ -542,11 +555,11 @@ inline Result<Unit, TaskError> trycatch_unit(Try&& func, Args&&... args)
             throw;  // rethrow to ensure we capture full derived type
         } catch (...) {
             return Result<Unit, TaskError>::Err(TaskError::Error(
-                FfiError::External(rust::ZngurCppOpaqueOwnedObject::build<task::ffi::CxxException>(std::current_exception(), what))));
+                FfiError::Exception(rust::ZngurCppOpaqueOwnedObject::build<task::ffi::CxxException>(std::current_exception(), what))));
         }
     } catch (...) {
         return Result<Unit, TaskError>::Err(TaskError::Error(
-            FfiError::External(rust::ZngurCppOpaqueOwnedObject::build<task::ffi::CxxException>(std::current_exception()))));
+            FfiError::Exception(rust::ZngurCppOpaqueOwnedObject::build<task::ffi::CxxException>(std::current_exception()))));
     }
 }
 
